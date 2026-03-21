@@ -1,0 +1,3 @@
+    name,rollNo,class,section,gender,parentName,phone,email,totalFee,bloodGroup,caste,aadhaar,yearOfJoining,academicYear
+    Ravi Kumar,2025001,Class 5,A,Male,Ramesh Kumar,9876543210,ravi@gmail.com,25000,O+,OC,123456789012,2025,2025-26
+    Anil Sharma,2025002,Class 5,B,Male,Suresh Sharma,9876543211,anil@gmail.com,25000,B+,BC,123456789013,2025,2025-26

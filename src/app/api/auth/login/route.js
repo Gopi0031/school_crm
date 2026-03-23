@@ -1,137 +1,153 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import mongoose from 'mongoose';
-import connectDB from '@/lib/mongodb';
-import User from '@/models/User';
-import Teacher from '@/models/Teacher';
+import prisma from '@/lib/prisma';
 
 export async function POST(req) {
   try {
-    await connectDB();
     const { username, password } = await req.json();
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('[Login] Attempt:', {
       username,
       passwordLength: password?.length,
-      dbState: mongoose.connection.readyState,
-      dbName: mongoose.connection.name
     });
 
     if (!username || !password) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Username and password required' 
+      return NextResponse.json({
+        success: false,
+        error: 'Username and password required'
       }, { status: 400 });
     }
 
-    // Find user (case-insensitive)
-    const user = await User.findOne({ 
-      username: username.toLowerCase().trim() 
+    const trimmedUsername = username.toLowerCase().trim();
+
+    // ✅ Find user using PRISMA (same as branch creation)
+    const user = await prisma.user.findUnique({
+      where: { username: trimmedUsername }
     });
 
-    console.log('[Login] User lookup result:', user ? {
+    console.log('[Login] User lookup:', user ? {
       found: true,
-      id: user._id.toString(),
+      id: user.id,
       username: user.username,
       role: user.role,
       isActive: user.isActive,
-      teacherId: user.teacherId?.toString(),
+      branch: user.branch,
     } : {
       found: false,
-      searchedFor: username.toLowerCase().trim()
+      searchedFor: trimmedUsername
     });
 
     if (!user) {
       console.log('[Login] ❌ User not found');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Invalid credentials' 
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid credentials'
       }, { status: 401 });
     }
 
     if (!user.isActive) {
       console.log('[Login] ❌ Account disabled');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Account is disabled' 
+      return NextResponse.json({
+        success: false,
+        error: 'Account is disabled'
       }, { status: 403 });
     }
 
     // Compare password
     console.log('[Login] Comparing passwords...');
     const match = await bcrypt.compare(password, user.password);
-    
     console.log('[Login] Password match:', match);
-    
+
     if (!match) {
       console.log('[Login] ❌ Invalid password');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Invalid credentials' 
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid credentials'
       }, { status: 401 });
     }
 
-    // Build response user object
-    let responseUser = user.toObject();
-    responseUser.id = responseUser._id?.toString();
-    delete responseUser.password;
+    // Build response (exclude password)
+    const { password: _, ...safeUser } = user;
 
-    // ✅ If teacher, fetch teacher details for assignedClass
+    // ✅ If teacher, fetch teacher details
     if (user.role === 'teacher' || user.role === 'teacher-admin') {
-      if (user.teacherId) {
-        try {
-          const teacher = await Teacher.findById(user.teacherId);
-          if (teacher) {
-            responseUser.assignedClass = teacher.assignedClass || '';
-            responseUser.section = teacher.section || '';
-            responseUser.classTeacher = teacher.classTeacher || false;
-            responseUser.subject = teacher.subject || '';
-            responseUser.employeeId = teacher.employeeId || '';
-            
-            console.log('[Login] ✅ Added teacher details:', {
-              assignedClass: responseUser.assignedClass,
-              section: responseUser.section,
-              classTeacher: responseUser.classTeacher,
-              subject: responseUser.subject
-            });
-          }
-        } catch (teacherErr) {
-          console.warn('[Login] Could not fetch teacher details:', teacherErr.message);
+      try {
+        // Try finding teacher by userId
+        let teacher = await prisma.teacher.findFirst({
+          where: { userId: user.id }
+        });
+
+        // Fallback: try by name + branch
+        if (!teacher) {
+          teacher = await prisma.teacher.findFirst({
+            where: {
+              name: user.name,
+              branch: user.branch
+            }
+          });
         }
-      } else {
-        // Try to find teacher by username if teacherId not set
-        try {
-          const teacher = await Teacher.findOne({ username: user.username });
-          if (teacher) {
-            responseUser.assignedClass = teacher.assignedClass || '';
-            responseUser.section = teacher.section || '';
-            responseUser.classTeacher = teacher.classTeacher || false;
-            responseUser.subject = teacher.subject || '';
-            responseUser.employeeId = teacher.employeeId || '';
-            responseUser.teacherId = teacher._id?.toString();
-            
-            console.log('[Login] ✅ Found teacher by username:', {
-              assignedClass: responseUser.assignedClass,
-              section: responseUser.section,
-              classTeacher: responseUser.classTeacher
-            });
-          }
-        } catch (teacherErr) {
-          console.warn('[Login] Could not find teacher by username:', teacherErr.message);
+
+        if (teacher) {
+          safeUser.teacherId = teacher.id;
+          safeUser.assignedClass = teacher.assignedClass || teacher.class || '';
+          safeUser.section = teacher.section || '';
+          safeUser.classTeacher = teacher.classTeacher || false;
+          safeUser.subject = teacher.subject || '';
+          safeUser.employeeId = teacher.employeeId || '';
+
+          console.log('[Login] ✅ Teacher details:', {
+            assignedClass: safeUser.assignedClass,
+            section: safeUser.section,
+            classTeacher: safeUser.classTeacher,
+            subject: safeUser.subject,
+          });
         }
+      } catch (teacherErr) {
+        console.warn('[Login] Could not fetch teacher details:', teacherErr.message);
       }
     }
 
-    console.log('[Login] ✅ Success for:', responseUser.username, 'role:', responseUser.role);
+    // ✅ If student, fetch student details
+    if (user.role === 'student') {
+      try {
+        let student = await prisma.student.findFirst({
+          where: { userId: user.id }
+        });
+
+        if (!student && user.studentId) {
+          student = await prisma.student.findUnique({
+            where: { id: user.studentId }
+          });
+        }
+
+        if (student) {
+          safeUser.studentId = student.id;
+          safeUser.class = student.class || safeUser.class;
+          safeUser.section = student.section || safeUser.section;
+          safeUser.rollNo = student.rollNo || safeUser.rollNo;
+
+          console.log('[Login] ✅ Student details:', {
+            class: safeUser.class,
+            section: safeUser.section,
+            rollNo: safeUser.rollNo,
+          });
+        }
+      } catch (studentErr) {
+        console.warn('[Login] Could not fetch student details:', studentErr.message);
+      }
+    }
+
+    console.log('[Login] ✅ Success:', safeUser.username, '→', safeUser.role);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-    return NextResponse.json({ success: true, user: responseUser });
+    return NextResponse.json({ success: true, user: safeUser });
+
   } catch (err) {
     console.error('[Login] ❌ Error:', err);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Server error' 
+    return NextResponse.json({
+      success: false,
+      error: 'Server error'
     }, { status: 500 });
   }
 }

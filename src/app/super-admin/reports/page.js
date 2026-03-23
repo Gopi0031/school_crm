@@ -31,14 +31,12 @@ export default function SuperAdminReports() {
   const [selected, setSelected] = useState(null);
   const perPage = 10;
 
-  // ✅ Fetch branches once
   useEffect(() => {
     fetch('/api/branches')
       .then(r => r.json())
       .then(d => { if (d.success) setBranches(d.data || []); });
   }, []);
 
-  // ✅ Fetch reports from real API — re-runs when filters change
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams();
@@ -54,7 +52,6 @@ export default function SuperAdminReports() {
       .finally(() => setLoading(false));
   }, [branch, cls, sec, exam]);
 
-  // ✅ Client-side search + sort on top of API data
   const filtered = useMemo(() => {
     let data = reports;
     if (search) {
@@ -79,7 +76,6 @@ export default function SuperAdminReports() {
     ? Math.round(filtered.reduce((a, r) => a + (r.percentage || 0), 0) / filtered.length)
     : 0;
 
-  // Build class-wise chart data from real reports
   const classChartData = useMemo(() => {
     const map = {};
     reports.forEach(r => {
@@ -168,35 +164,39 @@ export default function SuperAdminReports() {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Filters - FIXED KEY PROPS */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* Branch */}
+          {/* Branch - FIXED: Use b.id || b._id || index as fallback */}
           <select className="select" style={{ maxWidth: 170 }} value={branch}
             onChange={e => { setBranch(e.target.value); setPage(1); }}>
             <option value="">All Branches</option>
-            {branches.map(b => <option key={b._id} value={b.name}>{b.name}</option>)}
+            {branches.map((b, index) => (
+              <option key={b.id || b._id || `branch-${index}`} value={b.name}>
+                {b.name}
+              </option>
+            ))}
           </select>
 
           {/* Class */}
           <select className="select" style={{ maxWidth: 140 }} value={cls}
             onChange={e => { setCls(e.target.value); setPage(1); }}>
             <option value="">All Classes</option>
-            {CLASSES.map(c => <option key={c}>{c}</option>)}
+            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
 
           {/* Section */}
           <select className="select" style={{ maxWidth: 130 }} value={sec}
             onChange={e => { setSec(e.target.value); setPage(1); }}>
             <option value="">All Sections</option>
-            {SECTIONS.map(s => <option key={s}>{s}</option>)}
+            {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
 
           {/* Exam */}
           <select className="select" style={{ maxWidth: 150 }} value={exam}
             onChange={e => { setExam(e.target.value); setPage(1); }}>
             <option value="">All Exams</option>
-            {EXAMS.map(e => <option key={e}>{e}</option>)}
+            {EXAMS.map(e => <option key={e} value={e}>{e}</option>)}
           </select>
 
           {/* Search */}
@@ -221,7 +221,7 @@ export default function SuperAdminReports() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Table - FIXED KEY PROPS */}
       <div className="card">
         {loading ? (
           <LoadingSpinner text="Loading reports..." />
@@ -240,7 +240,7 @@ export default function SuperAdminReports() {
                     <EmptyState message={search ? `No results for "${search}"` : 'No reports found. Adjust filters.'} />
                   </td></tr>
                 ) : paginated.map((r, i) => (
-                  <tr key={r._id}>
+                  <tr key={r.id || r._id || `report-${(page - 1) * perPage + i}`}>
                     <td style={{ color: '#94a3b8', fontSize: '0.78rem' }}>{(page - 1) * perPage + i + 1}</td>
                     <td style={{ fontWeight: 700, color: '#4f46e5', fontFamily: 'monospace' }}>{r.rollNo}</td>
                     <td>
@@ -294,7 +294,6 @@ export default function SuperAdminReports() {
             <InfoRow label="Percentage" value={`${selected.percentage}%`} />
           </div>
 
-          {/* Score bar */}
           <div style={{ background: '#f8fafc', borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: '0.8rem', color: '#64748b' }}>
               <span>Score</span>

@@ -183,7 +183,7 @@ model Report {
   @@unique([studentId, subject, exam], name: "studentId_subject_exam")
 }
 
-// ─── EVENT ───────────────────────────────────────────────
+// ─── EVENT (UPDATED WITH IMAGE POSTS) ────────────────────
 model Event {
   id               String   @id @default(auto()) @map("_id") @db.ObjectId
   name             String
@@ -195,10 +195,59 @@ model Event {
   class            String   @default("All")
   section          String   @default("All")
   academicYear     String   @default("2024-25")
+  
+  // NEW: Event Type & Category
+  eventType        String   @default("General") // General, Academic, Sports, Cultural, Holiday, Exam, Meeting, Competition
+  
+  // NEW: Visibility Control - who can see this event
+  visibility       String[] @default(["All"]) // All, Teachers, Students, Parents, Branch Admins
+  
+  // NEW: Poster Image Support
+  posterImage      String?  // Cloudinary URL
+  posterPublicId   String?  // Cloudinary public ID for deletion
+  
+  // NEW: Additional Images (gallery)
+  images           Json     @default("[]") // Array of {url, publicId, caption}
+  
+  // NEW: Publishing & Status
+  isPublished      Boolean  @default(true)
+  isDraft          Boolean  @default(false)
+  isPinned         Boolean  @default(false) // Pin to top
+  
+  // NEW: Notification tracking
   notificationSent Boolean  @default(false)
+  notifiedAt       DateTime?
+  
+  // NEW: Location/Venue
+  venue            String   @default("")
+  
+  // NEW: Registration (for events requiring signup)
+  requiresRegistration Boolean @default(false)
+  maxParticipants      Int     @default(0)
+  registeredCount      Int     @default(0)
+  registrationDeadline String  @default("")
+  
+  // Audit fields
   createdBy        String   @default("")
+  createdByName    String   @default("")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// ─── EVENT REGISTRATION (NEW) ────────────────────────────
+model EventRegistration {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId     String   @db.ObjectId
+  userId      String   @db.ObjectId
+  userName    String   @default("")
+  userRole    String   @default("") // student, teacher, parent
+  userClass   String   @default("")
+  userSection String   @default("")
+  branch      String   @default("")
+  status      String   @default("registered") // registered, attended, cancelled
+  registeredAt DateTime @default(now())
+  
+  @@unique([eventId, userId], name: "eventId_userId")
 }
 
 // ─── HOLIDAY ─────────────────────────────────────────────
@@ -239,4 +288,48 @@ model Timetable {
   updatedAt DateTime @updatedAt
 
   @@unique([branch, class, section], name: "branch_class_section")
+}
+
+// ─── NOTIFICATION (NEW) ──────────────────────────────────
+model Notification {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  message     String
+  type        String   @default("general") // event, announcement, alert, reminder
+  priority    String   @default("normal") // low, normal, high, urgent
+  
+  // Target audience
+  targetRole  String[] @default(["All"]) // All, student, teacher, parent, branch-admin
+  targetBranch String  @default("All")
+  targetClass  String  @default("All")
+  targetSection String @default("All")
+  
+  // Related entity
+  relatedType String   @default("") // event, holiday, exam, etc.
+  relatedId   String   @default("")
+  
+  // Image/attachment
+  image       String   @default("")
+  link        String   @default("")
+  
+  // Status
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  
+  // Audit
+  createdBy   String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── USER NOTIFICATION STATUS (NEW) ──────────────────────
+model UserNotification {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
+  notificationId String   @db.ObjectId
+  isRead         Boolean  @default(false)
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+  
+  @@unique([userId, notificationId], name: "userId_notificationId")
 }

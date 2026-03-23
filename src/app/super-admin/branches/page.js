@@ -117,24 +117,42 @@ const load = async () => {
   };
 
   // ── Reset Password ──────────────────────────────
-  const resetPassword = async () => {
-    setError('');
-    if (!pwdForm.newPassword || pwdForm.newPassword.length < 8) { setError('Min 8 characters'); return; }
-    if (pwdForm.newPassword !== pwdForm.confirm) { setError('Passwords do not match'); return; }
-    setSaving(true);
-    try {
-      const r = await fetch(`/api/branches/${showReset.id}/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newPassword: pwdForm.newPassword }),
-      });
-      const d = await r.json();
-      if (!r.ok) { setError(d.error || 'Reset failed'); return; }
-      showToast('✓ Password reset successfully');
-      setShowReset(null); setPwdForm({ newPassword: '', confirm: '' });
-    } catch { setError('Network error'); }
-    finally { setSaving(false); }
-  };
+  // In the resetPassword function, use showReset.id (not showReset._id)
+const resetPassword = async () => {
+  setError('');
+  if (!pwdForm.newPassword || pwdForm.newPassword.length < 8) {
+    setError('Min 8 characters');
+    return;
+  }
+  if (pwdForm.newPassword !== pwdForm.confirm) {
+    setError('Passwords do not match');
+    return;
+  }
+
+  setSaving(true);
+  try {
+    // ✅ Use showReset.id (Prisma uses "id", not "_id")
+    const r = await fetch(`/api/branches/${showReset.id}/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPassword: pwdForm.newPassword }),
+    });
+
+    const d = await r.json();
+    if (!r.ok) {
+      setError(d.error || 'Reset failed');
+      return;
+    }
+
+    showToast('✓ Password reset successfully');
+    setShowReset(null);
+    setPwdForm({ newPassword: '', confirm: '' });
+  } catch {
+    setError('Network error');
+  } finally {
+    setSaving(false);
+  }
+};
 
   return (
     <AppLayout requiredRole="super-admin">

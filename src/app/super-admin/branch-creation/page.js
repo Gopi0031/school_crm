@@ -5,25 +5,25 @@ import { PageHeader, Badge, TableWrapper, EmptyState, Modal, FormField } from '@
 import { Plus, Key, Search, ShieldCheck, Trash2, Eye, EyeOff, X } from 'lucide-react';
 
 export default function SuperAdminBranchCreation() {
-  const [branches, setBranches]         = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [search, setSearch]             = useState('');
-  const [showAdd, setShowAdd]           = useState(false);
+  const [branches, setBranches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
   const [showPwdModal, setShowPwdModal] = useState(null);
-  const [newPwd, setNewPwd]             = useState('');
-  const [confirmPwd, setConfirmPwd]     = useState('');
-  const [showNewPwd, setShowNewPwd]     = useState(false);
-  const [showConfPwd, setShowConfPwd]   = useState(false);
-  const [pwdError, setPwdError]         = useState('');
-  const [pwdSuccess, setPwdSuccess]     = useState(false);
-  const [pwdSaving, setPwdSaving]       = useState(false);
-  const [deleteId, setDeleteId]         = useState(null);
-  const [form, setForm]                 = useState({
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfPwd, setShowConfPwd] = useState(false);
+  const [pwdError, setPwdError] = useState('');
+  const [pwdSuccess, setPwdSuccess] = useState(false);
+  const [pwdSaving, setPwdSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+  const [form, setForm] = useState({
     branchName: '', adminName: '', username: '', email: '', phone: '', password: '', confirmPassword: ''
   });
-  const [formError, setFormError]   = useState('');
-  const [creating, setCreating]     = useState(false);
-  const [toast, setToast]           = useState({ msg: '', type: 'success' });
+  const [formError, setFormError] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [toast, setToast] = useState({ msg: '', type: 'success' });
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
@@ -33,10 +33,19 @@ export default function SuperAdminBranchCreation() {
   // ── Load branches ─────────────────────────────────────────
   const load = async () => {
     setLoading(true);
-    const r = await fetch('/api/branches');
-    const d = await r.json();
-    if (d.success) setBranches(d.data);
-    setLoading(false);
+    try {
+      const r = await fetch('/api/branches');
+      const d = await r.json();
+      if (d.success) {
+        console.log('Loaded branches:', d.data.length);
+        setBranches(d.data);
+      }
+    } catch (err) {
+      console.error('Load branches error:', err);
+      showToast('Failed to load branches', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -52,77 +61,136 @@ export default function SuperAdminBranchCreation() {
   const createBranch = async () => {
     setFormError('');
     if (!form.branchName || !form.adminName || !form.username || !form.password) {
-      setFormError('Please fill all required fields'); return;
+      setFormError('Please fill all required fields');
+      return;
     }
     if (form.password !== form.confirmPassword) {
-      setFormError('Passwords do not match'); return;
+      setFormError('Passwords do not match');
+      return;
     }
     if (form.password.length < 8) {
-      setFormError('Password must be at least 8 characters'); return;
+      setFormError('Password must be at least 8 characters');
+      return;
     }
+
     setCreating(true);
     try {
       const r = await fetch('/api/branches', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
+        body: JSON.stringify({
           branchName: form.branchName,
-          adminName:  form.adminName,
-          username:   form.username.toLowerCase().trim(),
-          email:      form.email,
-          phone:      form.phone,
-          password:   form.password,
+          adminName: form.adminName,
+          username: form.username.toLowerCase().trim(),
+          email: form.email,
+          phone: form.phone,
+          password: form.password,
         }),
       });
       const d = await r.json();
-      if (!r.ok) { setFormError(d.error || 'Failed to create branch'); return; }
+
+      if (!r.ok) {
+        setFormError(d.error || 'Failed to create branch');
+        return;
+      }
+
       showToast('✓ Branch created successfully');
       setShowAdd(false);
       setForm({ branchName: '', adminName: '', username: '', email: '', phone: '', password: '', confirmPassword: '' });
       load();
-    } finally { setCreating(false); }
+    } catch (err) {
+      setFormError('Network error: ' + err.message);
+    } finally {
+      setCreating(false);
+    }
   };
 
-  // ── Change password — calls POST /api/branches/[id]/reset-password ──
+  // ── Change password ── ✅ FIXED: Use branch.id instead of branch._id
   const changePassword = async () => {
     setPwdError('');
-    if (!newPwd || newPwd.length < 8) { setPwdError('Password must be at least 8 characters'); return; }
-    if (newPwd !== confirmPwd)         { setPwdError('Passwords do not match'); return; }
+
+    if (!newPwd || newPwd.length < 8) {
+      setPwdError('Password must be at least 8 characters');
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      setPwdError('Passwords do not match');
+      return;
+    }
+
     setPwdSaving(true);
     try {
-      const r = await fetch(`/api/branches/${showPwdModal._id}/reset-password`, {
-        method:  'POST',
+      console.log('Resetting password for branch:', showPwdModal.id);
+
+      const r = await fetch(`/api/branches/${showPwdModal.id}/reset-password`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ newPassword: newPwd }),
+        body: JSON.stringify({ newPassword: newPwd }),
       });
+
       const d = await r.json();
-      if (!r.ok) { setPwdError(d.error || 'Update failed'); return; }
+
+      if (!r.ok) {
+        setPwdError(d.error || 'Update failed');
+        return;
+      }
+
+      console.log('Password reset response:', d);
+
       setPwdSuccess(true);
+      showToast(d.message || '✓ Password updated successfully');
+
       setTimeout(() => {
         setShowPwdModal(null);
-        setNewPwd(''); setConfirmPwd('');
+        setNewPwd('');
+        setConfirmPwd('');
         setPwdSuccess(false);
-      }, 2000);
-    } finally { setPwdSaving(false); }
+      }, 2500);
+
+    } catch (err) {
+      console.error('Password reset error:', err);
+      setPwdError('Network error: ' + err.message);
+    } finally {
+      setPwdSaving(false);
+    }
   };
 
   // ── Delete branch ─────────────────────────────────────────
   const deleteBranch = async () => {
-    const r = await fetch(`/api/branches/${deleteId}`, { method: 'DELETE' });
-    const d = await r.json();
-    if (d.success) { showToast('Branch deleted'); load(); }
-    else showToast(d.error || 'Delete failed', 'error');
-    setDeleteId(null);
+    try {
+      const r = await fetch(`/api/branches/${deleteId}`, { method: 'DELETE' });
+      const d = await r.json();
+
+      if (d.success) {
+        showToast('✓ Branch deleted');
+        load();
+      } else {
+        showToast(d.error || 'Delete failed', 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    } finally {
+      setDeleteId(null);
+    }
   };
 
   return (
     <AppLayout requiredRole="super-admin">
-
       {/* Toast */}
       {toast.msg && (
-        <div style={{ position: 'fixed', top: 20, right: 20, zIndex: 9999, background: toast.type === 'error' ? '#ef4444' : '#10b981', color: 'white', padding: '12px 20px', borderRadius: 12, fontWeight: 600, fontSize: '0.875rem', boxShadow: '0 8px 24px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 9999,
+          background: toast.type === 'error' ? '#ef4444' : '#10b981',
+          color: 'white', padding: '12px 20px', borderRadius: 12,
+          fontWeight: 600, fontSize: '0.875rem',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+          display: 'flex', alignItems: 'center', gap: 8,
+          animation: 'slideIn 0.3s ease'
+        }}>
           {toast.msg}
-          <button onClick={() => setToast({ msg: '' })} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'white', padding: 0 }}><X size={14} /></button>
+          <button onClick={() => setToast({ msg: '' })} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'white', padding: 0 }}>
+            <X size={14} />
+          </button>
         </div>
       )}
 
@@ -137,11 +205,17 @@ export default function SuperAdminBranchCreation() {
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <div style={{ position: 'relative', flex: 1, maxWidth: 360 }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-            <input className="input" style={{ paddingLeft: 32 }}
+            <input
+              className="input"
+              style={{ paddingLeft: 32 }}
               placeholder="Search by branch or username..."
-              value={search} onChange={e => setSearch(e.target.value)} />
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
           </div>
-          <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>{filtered.length} branches</span>
+          <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+            {filtered.length} branch{filtered.length !== 1 ? 'es' : ''}
+          </span>
         </div>
       </div>
 
@@ -150,26 +224,78 @@ export default function SuperAdminBranchCreation() {
         <TableWrapper>
           <thead>
             <tr>
-              <th>S.No</th><th>Branch Name</th><th>Admin Name</th>
-              <th>Username</th><th>Email</th><th>Phone</th><th>Status</th><th>Actions</th>
+              <th>S.No</th>
+              <th>Branch Name</th>
+              <th>Admin Name</th>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
-     <tbody>
-  {loading ? (
-    <tr key="loading">
-      <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Loading...</td>
-    </tr>
-  ) : filtered.length === 0 ? (
-    <tr key="empty">
-      <td colSpan={8}><EmptyState message="No branches found. Create one!" /></td>
-    </tr>
-  ) : filtered.map((b, i) => (
-    <tr key={b._id || b.id || i}>
-      {/* your existing row cells */}
-    </tr>
-  ))}
-</tbody>
-
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
+                  Loading branches...
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={8}>
+                  <EmptyState message={search ? `No branches matching "${search}"` : "No branches found. Create one!"} />
+                </td>
+              </tr>
+            ) : (
+              filtered.map((b, i) => (
+                <tr key={b.id || i}>
+                  <td style={{ color: '#64748b', fontSize: '0.85rem' }}>{i + 1}</td>
+                  <td>
+                    <strong style={{ color: '#1e293b', fontWeight: 700 }}>{b.name}</strong>
+                  </td>
+                  <td style={{ color: '#475569' }}>{b.adminId?.name || '—'}</td>
+                  <td>
+                    <code style={{ background: '#f1f5f9', padding: '2px 8px', borderRadius: 6, fontSize: '0.8rem', color: '#4f46e5', fontWeight: 600 }}>
+                      @{b.adminId?.username || '—'}
+                    </code>
+                  </td>
+                  <td style={{ color: '#64748b', fontSize: '0.85rem' }}>{b.adminId?.email || b.email || '—'}</td>
+                  <td style={{ color: '#64748b', fontSize: '0.85rem' }}>{b.adminId?.phone || b.phone || '—'}</td>
+                  <td>
+                    <Badge status={b.isActive !== false ? 'active' : 'inactive'}>
+                      {b.isActive !== false ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        className="btn btn-outline"
+                        style={{ padding: '5px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 5 }}
+                        onClick={() => {
+                          console.log('Opening password modal for:', b);
+                          setShowPwdModal(b);
+                          setPwdError('');
+                          setNewPwd('');
+                          setConfirmPwd('');
+                          setPwdSuccess(false);
+                        }}
+                      >
+                        <Key size={13} /> Password
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        style={{ padding: '5px 12px', fontSize: '0.78rem' }}
+                        onClick={() => setDeleteId(b.id)}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
         </TableWrapper>
       </div>
 
@@ -178,47 +304,73 @@ export default function SuperAdminBranchCreation() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <div style={{ gridColumn: '1 / -1' }}>
             <FormField label="Branch Name" required>
-              <input className="input" value={form.branchName}
+              <input
+                className="input"
+                value={form.branchName}
                 onChange={e => setForm({ ...form, branchName: e.target.value })}
-                placeholder="e.g. Koritepadu Branch" />
+                placeholder="e.g. Main Branch"
+              />
             </FormField>
           </div>
           <FormField label="Admin Full Name" required>
-            <input className="input" value={form.adminName}
+            <input
+              className="input"
+              value={form.adminName}
               onChange={e => setForm({ ...form, adminName: e.target.value })}
-              placeholder="Admin full name" />
+              placeholder="Admin full name"
+            />
           </FormField>
           <FormField label="Username" required>
-            <input className="input" value={form.username}
+            <input
+              className="input"
+              value={form.username}
               onChange={e => setForm({ ...form, username: e.target.value.toLowerCase().replace(/\s+/g, '') })}
-              placeholder="Login username" />
+              placeholder="Login username"
+            />
           </FormField>
           <FormField label="Email">
-            <input className="input" type="email" value={form.email}
+            <input
+              className="input"
+              type="email"
+              value={form.email}
               onChange={e => setForm({ ...form, email: e.target.value })}
-              placeholder="admin@school.com" />
+              placeholder="admin@school.com"
+            />
           </FormField>
           <FormField label="Phone">
-            <input className="input" value={form.phone}
+            <input
+              className="input"
+              value={form.phone}
               onChange={e => setForm({ ...form, phone: e.target.value })}
-              placeholder="10-digit phone" />
+              placeholder="10-digit phone"
+            />
           </FormField>
           <FormField label="Password" required>
-            <input className="input" type="password" value={form.password}
+            <input
+              className="input"
+              type="password"
+              value={form.password}
               onChange={e => setForm({ ...form, password: e.target.value })}
-              placeholder="Min 8 characters" />
+              placeholder="Min 8 characters"
+            />
           </FormField>
           <FormField label="Confirm Password" required>
-            <input className="input" type="password" value={form.confirmPassword}
+            <input
+              className="input"
+              type="password"
+              value={form.confirmPassword}
               onChange={e => setForm({ ...form, confirmPassword: e.target.value })}
-              placeholder="Re-enter password" />
+              placeholder="Re-enter password"
+            />
           </FormField>
         </div>
+
         {formError && (
           <div style={{ background: '#fee2e2', color: '#991b1b', padding: '8px 12px', borderRadius: 8, fontSize: '0.875rem', marginTop: 10 }}>
             ⚠️ {formError}
           </div>
         )}
+
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
           <button className="btn btn-outline" onClick={() => setShowAdd(false)}>Cancel</button>
           <button className="btn btn-primary" onClick={createBranch} disabled={creating}>
@@ -230,17 +382,25 @@ export default function SuperAdminBranchCreation() {
       {/* ── Change Password Modal ─────────────────────────── */}
       <Modal
         open={!!showPwdModal}
-        onClose={() => setShowPwdModal(null)}
-        title={`Change Password — ${showPwdModal?.name}`}
+        onClose={() => {
+          setShowPwdModal(null);
+          setPwdError('');
+          setPwdSuccess(false);
+          setNewPwd('');
+          setConfirmPwd('');
+        }}
+        title={`Reset Password — ${showPwdModal?.name}`}
         size="sm"
       >
         {pwdSuccess ? (
           <div style={{ textAlign: 'center', padding: '24px 0' }}>
             <ShieldCheck size={52} color="#10b981" style={{ margin: '0 auto 12px', display: 'block' }} />
-            <p style={{ fontWeight: 700, color: '#10b981', fontSize: '1rem' }}>Password updated successfully!</p>
+            <p style={{ fontWeight: 700, color: '#10b981', fontSize: '1rem' }}>
+              Password updated successfully!
+            </p>
             {showPwdModal?.adminId?.email && (
               <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: 6 }}>
-                Login details sent to <strong>{showPwdModal.adminId.email}</strong>
+                New credentials sent to <strong>{showPwdModal.adminId.email}</strong>
               </p>
             )}
           </div>
@@ -256,11 +416,19 @@ export default function SuperAdminBranchCreation() {
 
             <FormField label="New Password" required>
               <div style={{ position: 'relative' }}>
-                <input className="input" type={showNewPwd ? 'text' : 'password'}
-                  value={newPwd} onChange={e => setNewPwd(e.target.value)}
-                  placeholder="Min 8 characters" style={{ paddingRight: 38 }} />
-                <button onClick={() => setShowNewPwd(p => !p)}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0 }}>
+                <input
+                  className="input"
+                  type={showNewPwd ? 'text' : 'password'}
+                  value={newPwd}
+                  onChange={e => setNewPwd(e.target.value)}
+                  placeholder="Min 8 characters"
+                  style={{ paddingRight: 38 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPwd(p => !p)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0 }}
+                >
                   {showNewPwd ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
@@ -268,11 +436,19 @@ export default function SuperAdminBranchCreation() {
 
             <FormField label="Confirm New Password" required>
               <div style={{ position: 'relative' }}>
-                <input className="input" type={showConfPwd ? 'text' : 'password'}
-                  value={confirmPwd} onChange={e => setConfirmPwd(e.target.value)}
-                  placeholder="Re-enter new password" style={{ paddingRight: 38 }} />
-                <button onClick={() => setShowConfPwd(p => !p)}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0 }}>
+                <input
+                  className="input"
+                  type={showConfPwd ? 'text' : 'password'}
+                  value={confirmPwd}
+                  onChange={e => setConfirmPwd(e.target.value)}
+                  placeholder="Re-enter new password"
+                  style={{ paddingRight: 38 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfPwd(p => !p)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0 }}
+                >
                   {showConfPwd ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
@@ -312,6 +488,12 @@ export default function SuperAdminBranchCreation() {
         </div>
       </Modal>
 
+      <style>{`
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateX(20px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+      `}</style>
     </AppLayout>
   );
 }

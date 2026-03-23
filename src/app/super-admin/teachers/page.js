@@ -98,10 +98,12 @@ export default function SuperAdminTeachers() {
                 </tr>
               </thead>
               <tbody>
-                {paginated.length === 0 ? (
-                  <tr><td colSpan={9}><EmptyState message={search?`No results for "${search}"`:'No teachers found'} /></td></tr>
-                ) : paginated.map((t, i) => (
-                  <tr key={t._id}>
+  {paginated.length === 0 ? (
+    <tr key="empty-row">
+      <td colSpan={9}><EmptyState message={search?`No results for "${search}"`:'No teachers found'} /></td>
+    </tr>
+  ) : paginated.map((t, i) => (
+    <tr key={t._id || t.id || `teacher-${i}`}>
                     <td style={{ color:'#94a3b8', fontWeight:500 }}>{(page-1)*perPage+i+1}</td>
                     <td><Badge type={t.status==='Active'||!t.status?'success':'warning'}>{t.status||'Active'}</Badge></td>
                     <td>

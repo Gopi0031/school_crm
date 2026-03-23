@@ -100,9 +100,11 @@ export default function SuperAdminStudents() {
               </thead>
               <tbody>
                 {paginated.length === 0 ? (
-                  <tr><td colSpan={8}><EmptyState message={search ? `No results for "${search}"` : 'No students found'} /></td></tr>
-                ) : paginated.map((s, i) => (
-                  <tr key={s._id} style={{ transition:'background 0.15s' }}
+                 // After:
+<tr key="empty-row"><td colSpan={8}><EmptyState message={search ? `No results for "${search}"` : 'No students found'} /></td></tr>
+               // After:
+) : paginated.map((s, i) => (
+  <tr key={s._id || s.id || `student-${i}`} style={{ transition:'background 0.15s' }}
                     onMouseEnter={e => e.currentTarget.style.background='#fafbff'}
                     onMouseLeave={e => e.currentTarget.style.background='transparent'}>
                     <td style={{ color:'#94a3b8', fontWeight:600 }}>{(page-1)*perPage+i+1}</td>

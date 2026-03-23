@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USER ───────────────────────────────────────────────
+model User {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  username     String   @unique
+  password     String
+  role         String
+  name         String
+  email        String   @default("")
+  phone        String   @default("")
+  branch       String   @default("")
+  branchId     String   @default("")
+  class        String   @default("")
+  section      String   @default("")
+  rollNo       String   @default("")
+  studentId    String   @default("")
+  profileImage String   @default("")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── BRANCH ─────────────────────────────────────────────
+model Branch {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String   @default("")
+  phone     String   @default("")
+  address   String   @default("")
+  adminId   String?  @db.ObjectId
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── STUDENT ─────────────────────────────────────────────
+model Student {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                 String
+  rollNo               String
+  class                String
+  section              String
+  gender               String   @default("")
+  parentName           String   @default("")
+  phone                String   @default("")
+  email                String   @default("")
+  bloodGroup           String   @default("")
+  caste                String   @default("")
+  aadhaar              String   @default("")
+  address              String   @default("")
+  totalFee             Float    @default(0)
+  paidFee              Float    @default(0)
+  term1                Float    @default(0)
+  term2                Float    @default(0)
+  term3                Float    @default(0)
+  academicYear         String   @default("")
+  yearOfJoining        String   @default("")
+  dateOfJoining        String   @default("")
+  branch               String   @default("")
+  branchId             String   @default("")
+  username             String   @default("")
+  userId               String   @default("")
+  status               String   @default("Active")
+  presentDays          Int      @default(0)
+  absentDays           Int      @default(0)
+  totalWorkingDays     Int      @default(0)
+  todayAttendance      String   @default("")
+  profileImage         String   @default("")
+  profileImagePublicId String   @default("")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([rollNo, branch])
+}
+
+// ─── TEACHER ─────────────────────────────────────────────
+model Teacher {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                 String
+  employeeId           String   @default("")
+  phone                String   @default("")
+  email                String   @default("")
+  gender               String   @default("")
+  dob                  String   @default("")
+  address              String   @default("")
+  qualification        String   @default("")
+  experience           String   @default("")
+  subject              String   @default("")
+  class                String   @default("")
+  section              String   @default("")
+  branch               String   @default("")
+  branchId             String   @default("")
+  salary               Float    @default(0)
+  profileImage         String   @default("")
+  profileImagePublicId String   @default("")
+  status               String   @default("Active")
+  userId               String   @default("")
+  joinDate             String   @default("")
+  joinYear             String   @default("")
+  aadhaar              String   @default("")
+  pan                  String   @default("")
+  assignedClass        String   @default("")
+  classTeacher         Boolean  @default(false)
+  presentDays          Int      @default(0)
+  absentDays           Int      @default(0)
+  totalDays            Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// ─── STAFF ───────────────────────────────────────────────
+model Staff {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                 String
+  employeeId           String   @unique
+  phone                String   @default("")
+  email                String   @default("")
+  department           String   @default("")
+  designation          String   @default("")
+  qualification        String   @default("")
+  experience           String   @default("")
+  joinYear             String   @default("")
+  salary               Float    @default(0)
+  branch               String   @default("")
+  branchId             String   @default("")
+  presentDays          Int      @default(0)
+  aadhaar              String   @default("")
+  pan                  String   @default("")
+  status               String   @default("Active")
+  profileImage         String   @default("")
+  profileImagePublicId String   @default("")
+  userId               String   @default("")
+  createdBy            String   @default("")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// ─── ATTENDANCE ──────────────────────────────────────────
+model Attendance {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  entityId   String   @db.ObjectId
+  entityType String
+  date       String
+  status     String
+  branch     String   @default("")
+  class      String   @default("")
+  section    String   @default("")
+  markedBy   String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([entityId, date], name: "entityId_date")
+}
+
+// ─── REPORT ──────────────────────────────────────────────
+model Report {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId     String   @db.ObjectId
+  studentName   String   @default("")
+  rollNo        String   @default("")
+  class         String   @default("")
+  section       String   @default("")
+  branch        String   @default("")
+  exam          String   @default("Annual")
+  subject       String   @default("")
+  marksObtained Float    @default(0)
+  totalMarks    Float    @default(0)
+  percentage    Float    @default(0)
+  status        String   @default("Pass")
+  academicYear  String   @default("2024-25")
+  createdBy     String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([studentId, subject, exam], name: "studentId_subject_exam")
+}
+
+// ─── EVENT ───────────────────────────────────────────────
+model Event {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  date             String
+  startTime        String   @default("")
+  endTime          String   @default("")
+  description      String   @default("")
+  branch           String   @default("All")
+  class            String   @default("All")
+  section          String   @default("All")
+  academicYear     String   @default("2024-25")
+  notificationSent Boolean  @default(false)
+  createdBy        String   @default("")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ─── HOLIDAY ─────────────────────────────────────────────
+model Holiday {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  date         String
+  description  String   @default("")
+  branch       String   @default("All")
+  academicYear String   @default("2024-25")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── SYLLABUS ────────────────────────────────────────────
+model Syllabus {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  branch    String
+  class     String
+  subject   String
+  units     Json     @default("[]")
+  updatedBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branch, class, subject], name: "branch_class_subject")
+}
+
+// ─── TIMETABLE ───────────────────────────────────────────
+model Timetable {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  branch    String
+  class     String
+  section   String
+  days      Json     @default("[]")
+  updatedBy String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branch, class, section], name: "branch_class_section")
+}

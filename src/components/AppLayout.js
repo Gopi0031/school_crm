@@ -8,7 +8,9 @@ import {
   CreditCard, BarChart2, CalendarDays, LogIn, Building2,
   Bell, UserCircle, ClipboardList, BookOpen, PenSquare,
   Star, LogOut, Menu, X, ChevronRight, Sparkles,
+  Calendar,    // ✅ ADD — no duplicate BookOpen
 } from 'lucide-react';
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    NAV CONFIG
@@ -43,14 +45,19 @@ const NAV = {
     { label: 'Mark Attendance', href: '/teacher-admin/mark-attendance', icon: PenSquare },
     { label: 'Attendance',      href: '/teacher-admin/attendance',      icon: ClipboardList },
     { label: 'Fee',             href: '/teacher-admin/fee',             icon: CreditCard },
+    { label: 'Timetable', href: '/teacher-admin/timetable', icon: Calendar },
+{ label: 'Syllabus',  href: '/teacher-admin/syllabus',  icon: BookOpen  },
     { label: 'Reports',         href: '/teacher-admin/reports',         icon: BarChart2 },
     { label: 'Events',          href: '/teacher-admin/events',          icon: CalendarDays },
     { label: 'Profile',         href: '/teacher-admin/profile',         icon: UserCircle },
   ],
   student: [
     { label: 'Dashboard',       href: '/student/dashboard',   icon: LayoutDashboard },
+    { label: 'Timetable', href: '/student/timetable', icon: Calendar  },
+{ label: 'Syllabus',  href: '/student/syllabus',  icon: BookOpen  },
     { label: 'My Results',      href: '/student/results',     icon: BookOpen },
     { label: 'Attendance',      href: '/student/attendance',  icon: ClipboardList },
+    
     { label: 'Fee Details',     href: '/student/fee',         icon: CreditCard },
     { label: 'Events & Posts',  href: '/student/events',      icon: CalendarDays },
     { label: 'Profile',         href: '/student/profile',     icon: UserCircle },

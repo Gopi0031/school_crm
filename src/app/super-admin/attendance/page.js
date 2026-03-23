@@ -79,7 +79,8 @@ export default function SuperAdminAttendance() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <select className="select" value={branch} onChange={e => { setBranch(e.target.value); setPage(1); }}>
             <option value="">All Branches</option>
-            {branches.map(b => <option key={b._id}>{b.name}</option>)}
+            {branches.map(b => <option key={b.id}>{b.name}</option>)}
+
           </select>
           <input className="input" placeholder="Search student..." onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ maxWidth: 240 }} />
         </div>
@@ -91,14 +92,18 @@ export default function SuperAdminAttendance() {
             <tr><th>S.No</th><th>Status</th><th>Roll No</th><th>Student Name</th><th>Class</th><th>Branch</th><th>Today</th><th>Total Att.</th></tr>
           </thead>
           <tbody>
-            {loading ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Loading...</td></tr>
-            ) : paginated.length === 0 ? (
-              <tr><td colSpan={8}><EmptyState /></td></tr>
-            ) : paginated.map((s, i) => {
+  {loading ? (
+    <tr key="loading-row">
+      <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Loading...</td>
+    </tr>
+  ) : paginated.length === 0 ? (
+    <tr key="empty-row">
+      <td colSpan={8}><EmptyState /></td>
+    </tr>
+  ) : paginated.map((s, i) => {
               const pct = s.totalWorkingDays ? Math.round(s.presentDays/s.totalWorkingDays*100) : 0;
               return (
-                <tr key={s._id}>
+                  <tr key={s._id || s.id || `row-${i}`}>
                   <td style={{ color: '#94a3b8' }}>{(page-1)*perPage+i+1}</td>
                   <td><Badge>{s.status}</Badge></td>
                   <td style={{ fontWeight: 600 }}>{s.rollNo}</td>

@@ -248,13 +248,15 @@ export default function BranchAdminAttendance() {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
-              <tr><td colSpan={10} style={{ textAlign: 'center', padding: 48 }}>
+            // With this:
+{loading ? (
+  <tr key="loading-row"><td colSpan={10} style={{ textAlign: 'center', padding: 48 }}>
                 <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
                 <span style={{ color: '#94a3b8' }}>Loading attendance...</span>
               </td></tr>
-            ) : paginated.length === 0 ? (
-              <tr><td colSpan={10}><EmptyState message="No students found" /></td></tr>
+           // With this:
+) : paginated.length === 0 ? (
+  <tr key="empty-row"><td colSpan={10}><EmptyState message="No students found" /></td></tr>
             ) : paginated.map((st, i) => {
               const status = attMap[String(st._id)] || 'N/A';
               const pct    = getPct(st);

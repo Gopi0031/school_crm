@@ -1,18 +1,15 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Report from '@/models/Report';
-import mongoose from 'mongoose';
+import prisma from '@/lib/prisma';
 
 export async function POST(req) {
   try {
-    await connectDB();
     const { ids } = await req.json();
     if (!ids?.length) return NextResponse.json({ error: 'No IDs provided' }, { status: 400 });
 
-    const objectIds = ids.map(id => new mongoose.Types.ObjectId(id));
-    const result    = await Report.deleteMany({ _id: { $in: objectIds } });
-
-    return NextResponse.json({ success: true, deleted: result.deletedCount });
+    const result = await prisma.report.deleteMany({
+      where: { id: { in: ids } },
+    });
+    return NextResponse.json({ success: true, deleted: result.count });
   } catch (err) {
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
   }

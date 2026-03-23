@@ -154,43 +154,22 @@ export default function SuperAdminBranchCreation() {
               <th>Username</th><th>Email</th><th>Phone</th><th>Status</th><th>Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
-                Loading...
-              </td></tr>
-            ) : filtered.length === 0 ? (
-              <tr><td colSpan={8}><EmptyState message="No branches found" /></td></tr>
-            ) : filtered.map((b, i) => (
-              <tr key={b._id}>
-                <td style={{ color: '#94a3b8' }}>{i + 1}</td>
-                <td style={{ fontWeight: 700 }}>{b.name}</td>
-                <td>{b.adminId?.name || '—'}</td>
-                <td style={{ fontWeight: 600, color: '#4f46e5', fontSize: '0.83rem' }}>
-                  {b.adminId?.username || '—'}
-                </td>
-                <td style={{ fontSize: '0.83rem' }}>{b.email || b.adminId?.email || '—'}</td>
-                <td style={{ fontSize: '0.83rem' }}>{b.phone || b.adminId?.phone || '—'}</td>
-                <td>
-                  <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, background: b.isActive !== false ? '#dcfce7' : '#fee2e2', color: b.isActive !== false ? '#16a34a' : '#dc2626' }}>
-                    {b.isActive !== false ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '0.75rem' }}
-                      onClick={() => { setShowPwdModal(b); setNewPwd(''); setConfirmPwd(''); setPwdError(''); setPwdSuccess(false); }}>
-                      <Key size={12} /> Change Password
-                    </button>
-                    <button className="btn btn-danger" style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                      onClick={() => setDeleteId(b._id)}>
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
+     <tbody>
+  {loading ? (
+    <tr key="loading">
+      <td colSpan={8} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>Loading...</td>
+    </tr>
+  ) : filtered.length === 0 ? (
+    <tr key="empty">
+      <td colSpan={8}><EmptyState message="No branches found. Create one!" /></td>
+    </tr>
+  ) : filtered.map((b, i) => (
+    <tr key={b._id || b.id || i}>
+      {/* your existing row cells */}
+    </tr>
+  ))}
+</tbody>
+
         </TableWrapper>
       </div>
 

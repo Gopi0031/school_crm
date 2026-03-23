@@ -1,35 +1,30 @@
-const mongoose = require('mongoose');
-const bcrypt   = require('bcryptjs');
-require('dotenv').config({ path: '.env.local' });
+import pkg from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
-const UserSchema = new mongoose.Schema({
-  username: String, password: String, role: String,
-  name: String, email: String, isActive: Boolean,
-}, { timestamps: true });
+const { PrismaClient } = pkg;
+const prisma = new PrismaClient();
 
-const User = mongoose.models.User || mongoose.model('User', UserSchema);
+async function main() {
+  console.log('🌱 Seeding...');
 
-async function seed() {
-  await mongoose.connect(process.env.MONGODB_URI);
-  console.log('Connected to MongoDB');
+  const hash = await bcrypt.hash('Admin123', 12);
 
-  const existing = await User.findOne({ username: 'superadmin' });
-  if (existing) {
-    console.log('superadmin already exists');
-    process.exit(0);
-  }
-
-  const hashed = await bcrypt.hash('Admin@1234', 10);
-  await User.create({
-    username: 'superadmin',
-    password: hashed,
-    role:     'super-admin',
-    name:     'Super Admin',
-    email:    'admin@school.com',
-    isActive: true,
+  await prisma.user.upsert({
+    where:  { username: 'superadmin' },
+    update: {},
+    create: {
+      username:    'superadmin',
+      password:    hash,
+      role:        'super-admin',
+      name:        'Super Admin',
+      email:       'superadmin@school.com',
+      isActive:    true,
+    },
   });
-  console.log('✓ superadmin created — username: superadmin / password: Admin@1234');
-  process.exit(0);
+
+  console.log('✅ Super admin: superadmin / Admin123');
 }
 
-seed().catch(err => { console.error(err); process.exit(1); });
+main()
+  .catch(e => { console.error(e); process.exit(1); })
+  .finally(() => prisma.$disconnect());

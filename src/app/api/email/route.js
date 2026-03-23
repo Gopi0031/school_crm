@@ -1,24 +1,23 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Student from '@/models/Student';
-import Event from '@/models/Event';
+import prisma from '@/lib/prisma';
 import { sendEmail, feeReminderTemplate, admissionConfirmTemplate, eventNotificationTemplate } from '@/lib/mailer';
 
 export async function POST(req) {
   try {
-    await connectDB();
     const body = await req.json();
     const { type } = body;
 
     if (type === 'fee_reminder') {
-      // Send fee reminders to all students with pending fee
       const { studentIds, branch, cls } = body;
-      const query = { paidFee: { $lt: 45000 } };
-      if (studentIds?.length) query._id = { $in: studentIds };
-      if (branch) query.branch = branch;
-      if (cls) query.class = cls;
-
-      const students = await Student.find(query).select('name email parentName totalFee paidFee');
+      const students = await prisma.student.findMany({
+        where: {
+          paidFee: { lt: 45000 },
+          ...(studentIds?.length && { id: { in: studentIds } }),
+          ...(branch && { branch }),
+          ...(cls    && { class: cls }),
+        },
+        select: { name: true, email: true, parentName: true, totalFee: true, paidFee: true },
+      });
       if (!students.length) return NextResponse.json({ success: false, message: 'No students found' });
 
       const results = [];
@@ -45,7 +44,7 @@ export async function POST(req) {
 
     if (type === 'admission_confirm') {
       const { studentId } = body;
-      const student = await Student.findById(studentId);
+      const student = await prisma.student.findUnique({ where: { id: studentId } });
       if (!student) return NextResponse.json({ error: 'Student not found' }, { status: 404 });
       if (!student.email) return NextResponse.json({ error: 'Student has no email' }, { status: 400 });
 
@@ -53,10 +52,8 @@ export async function POST(req) {
         to: student.email,
         subject: `Admission Confirmed - ${student.name}`,
         html: admissionConfirmTemplate({
-          studentName: student.name,
-          rollNo: student.rollNo,
-          className: student.class,
-          section: student.section,
+          studentName: student.name, rollNo: student.rollNo,
+          className: student.class, section: student.section,
         }),
       });
       return NextResponse.json({ success: true, message: `Admission email sent to ${student.email}` });
@@ -64,20 +61,21 @@ export async function POST(req) {
 
     if (type === 'event_notification') {
       const { eventId, recipientEmails } = body;
-      const event = await Event.findById(eventId);
+      const event = await prisma.event.findUnique({ where: { id: eventId } });
       if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
-      // If no specific emails, find relevant students
       let emails = recipientEmails || [];
       if (!emails.length) {
-        const studentQuery = {};
-        if (event.branch !== 'All') studentQuery.branch = event.branch;
-        if (event.class !== 'All') studentQuery.class = event.class;
-        if (event.section !== 'All') studentQuery.section = event.section;
-        const students = await Student.find(studentQuery).select('email');
+        const students = await prisma.student.findMany({
+          where: {
+            ...(event.branch  !== 'All' && { branch:  event.branch }),
+            ...(event.class   !== 'All' && { class:   event.class }),
+            ...(event.section !== 'All' && { section: event.section }),
+          },
+          select: { email: true },
+        });
         emails = students.map(s => s.email).filter(Boolean);
       }
-
       if (!emails.length) return NextResponse.json({ success: false, message: 'No recipients found' });
 
       const results = [];
@@ -87,12 +85,9 @@ export async function POST(req) {
             to: email,
             subject: `Event Notification: ${event.name}`,
             html: eventNotificationTemplate({
-              eventName: event.name,
-              date: event.date,
-              startTime: event.startTime,
-              endTime: event.endTime,
-              description: event.description,
-              branch: event.branch,
+              eventName: event.name, date: event.date,
+              startTime: event.startTime, endTime: event.endTime,
+              description: event.description, branch: event.branch,
             }),
           });
           results.push({ email, status: 'sent' });
@@ -101,9 +96,7 @@ export async function POST(req) {
         }
       }
 
-      // Mark notification as sent
-      await Event.findByIdAndUpdate(eventId, { notificationSent: true });
-
+      await prisma.event.update({ where: { id: eventId }, data: { notificationSent: true } });
       return NextResponse.json({ success: true, total: emails.length, results });
     }
 

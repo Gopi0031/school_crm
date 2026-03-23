@@ -46,3 +46,5 @@ next-env.d.ts
 
 # scripts output
 scripts/*.log
+
+/src/generated/prisma

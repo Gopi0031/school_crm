@@ -1,3 +1,4 @@
+// ✅ No changes needed — no connectDB, no Mongoose
 import { NextResponse } from 'next/server';
 import { uploadImage } from '@/lib/cloudinary';
 

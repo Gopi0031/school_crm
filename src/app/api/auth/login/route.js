@@ -1,70 +1,137 @@
-// src/app/api/auth/login/route.js
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
-
-const redirectMap = {
-  'super-admin':   '/super-admin/dashboard',
-  'branch-admin':  '/branch-admin/dashboard',
-  'teacher-admin': '/teacher-admin/dashboard',
-    'teacher':       '/teacher-admin/dashboard',  // ✅ fallback for old data
-  'student':       '/student/dashboard',
-};
+import connectDB from '@/lib/mongodb';
+import User from '@/models/User';
+import Teacher from '@/models/Teacher';
 
 export async function POST(req) {
   try {
     await connectDB();
     const { username, password } = await req.json();
 
-    if (!username || !password) {
-      return NextResponse.json({ error: 'Username and password are required' }, { status: 400 });
-    }
-
-    const usersCol = mongoose.connection.db.collection('users');
-
-    const user = await usersCol.findOne({
-      username: { $regex: `^${username.trim()}$`, $options: 'i' },
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[Login] Attempt:', {
+      username,
+      passwordLength: password?.length,
+      dbState: mongoose.connection.readyState,
+      dbName: mongoose.connection.name
     });
 
-    console.log('[login] username attempted:', username);
-    console.log('[login] user found:', user ? `yes — role: ${user.role}` : 'NO');
+    if (!username || !password) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Username and password required' 
+      }, { status: 400 });
+    }
+
+    // Find user (case-insensitive)
+    const user = await User.findOne({ 
+      username: username.toLowerCase().trim() 
+    });
+
+    console.log('[Login] User lookup result:', user ? {
+      found: true,
+      id: user._id.toString(),
+      username: user.username,
+      role: user.role,
+      isActive: user.isActive,
+      teacherId: user.teacherId?.toString(),
+    } : {
+      found: false,
+      searchedFor: username.toLowerCase().trim()
+    });
 
     if (!user) {
-      return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 });
+      console.log('[Login] ❌ User not found');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid credentials' 
+      }, { status: 401 });
     }
 
-    if (user.isActive === false) {
-      return NextResponse.json({ error: 'Account is deactivated. Contact admin.' }, { status: 403 });
+    if (!user.isActive) {
+      console.log('[Login] ❌ Account disabled');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Account is disabled' 
+      }, { status: 403 });
     }
 
-    const match = await bcrypt.compare(password.trim(), user.password);
-    console.log('[login] password match:', match);
-
+    // Compare password
+    console.log('[Login] Comparing passwords...');
+    const match = await bcrypt.compare(password, user.password);
+    
+    console.log('[Login] Password match:', match);
+    
     if (!match) {
-      return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 });
+      console.log('[Login] ❌ Invalid password');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid credentials' 
+      }, { status: 401 });
     }
 
-    const safeUser = {
-      _id:       user._id.toString(),
-      username:  user.username,
-      name:      user.name      || '',
-      role:      user.role,
-      branch:    user.branch    || '',
-      branchId:  user.branchId?.toString()  || '',
-      email:     user.email     || '',
-      phone:     user.phone     || '',
-      rollNo:    user.rollNo    || '',
-      class:     user.class     || '',
-      section:   user.section   || '',
-studentId: user.studentId ? user.studentId.toString() : '',
-      teacherId: user.teacherId?.toString() || '',
-      redirect:  redirectMap[user.role] || '/login',  // ✅ ADD THIS
-    };
+    // Build response user object
+    let responseUser = user.toObject();
+    responseUser.id = responseUser._id?.toString();
+    delete responseUser.password;
 
-    return NextResponse.json({ success: true, user: safeUser });
+    // ✅ If teacher, fetch teacher details for assignedClass
+    if (user.role === 'teacher' || user.role === 'teacher-admin') {
+      if (user.teacherId) {
+        try {
+          const teacher = await Teacher.findById(user.teacherId);
+          if (teacher) {
+            responseUser.assignedClass = teacher.assignedClass || '';
+            responseUser.section = teacher.section || '';
+            responseUser.classTeacher = teacher.classTeacher || false;
+            responseUser.subject = teacher.subject || '';
+            responseUser.employeeId = teacher.employeeId || '';
+            
+            console.log('[Login] ✅ Added teacher details:', {
+              assignedClass: responseUser.assignedClass,
+              section: responseUser.section,
+              classTeacher: responseUser.classTeacher,
+              subject: responseUser.subject
+            });
+          }
+        } catch (teacherErr) {
+          console.warn('[Login] Could not fetch teacher details:', teacherErr.message);
+        }
+      } else {
+        // Try to find teacher by username if teacherId not set
+        try {
+          const teacher = await Teacher.findOne({ username: user.username });
+          if (teacher) {
+            responseUser.assignedClass = teacher.assignedClass || '';
+            responseUser.section = teacher.section || '';
+            responseUser.classTeacher = teacher.classTeacher || false;
+            responseUser.subject = teacher.subject || '';
+            responseUser.employeeId = teacher.employeeId || '';
+            responseUser.teacherId = teacher._id?.toString();
+            
+            console.log('[Login] ✅ Found teacher by username:', {
+              assignedClass: responseUser.assignedClass,
+              section: responseUser.section,
+              classTeacher: responseUser.classTeacher
+            });
+          }
+        } catch (teacherErr) {
+          console.warn('[Login] Could not find teacher by username:', teacherErr.message);
+        }
+      }
+    }
+
+    console.log('[Login] ✅ Success for:', responseUser.username, 'role:', responseUser.role);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    return NextResponse.json({ success: true, user: responseUser });
   } catch (err) {
-    console.error('[login error]', err);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    console.error('[Login] ❌ Error:', err);
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Server error' 
+    }, { status: 500 });
   }
 }

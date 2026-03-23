@@ -3,12 +3,13 @@ import { useState, useEffect, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { PageHeader, TableWrapper, Pagination, EmptyState, Modal } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
-import { Eye, Search, X } from 'lucide-react';
+import { Eye, Search, X, Lock } from 'lucide-react';
 
 export default function TeacherFee() {
   const { user } = useAuth();
 
-  const teacherClass   = user?.class   || '';
+  // ✅ Use assignedClass for class teachers
+  const teacherClass   = user?.assignedClass || user?.class || '';
   const teacherSection = user?.section || '';
 
   const [students, setStudents] = useState([]);
@@ -20,15 +21,30 @@ export default function TeacherFee() {
 
   useEffect(() => {
     if (!user) return;
+    
+    // ✅ Only load if class is assigned
+    if (!teacherClass || !teacherSection) {
+      setLoading(false);
+      return;
+    }
+
     const params = new URLSearchParams({ branch: user.branch || '' });
-    if (teacherClass)   params.set('class',   teacherClass);
-    if (teacherSection) params.set('section', teacherSection);
+    params.set('class', teacherClass);
+    params.set('section', teacherSection);
+    
+    console.log('[Fee] Loading for:', { class: teacherClass, section: teacherSection });
+    
     setLoading(true);
     fetch(`/api/fee?${params}`)
       .then(r => r.json())
-      .then(d => { if (d.success) setStudents(d.data); })
+      .then(d => { 
+        if (d.success) {
+          console.log('[Fee] Loaded students:', d.data.length);
+          setStudents(d.data); 
+        }
+      })
       .finally(() => setLoading(false));
-  }, [user]);
+  }, [user, teacherClass, teacherSection]);
 
   const filtered = useMemo(() => students.filter(s =>
     !search ||
@@ -55,12 +71,10 @@ export default function TeacherFee() {
 
   // ── Derive No. of Terms from data ─────────────────────────
   const getTermCount = (s) => {
-    // If API returns numberOfTerms directly, use it.
-    // Otherwise count how many term fields exist with a value > 0.
     if (s.numberOfTerms) return s.numberOfTerms;
     const paid = [s.term1, s.term2, s.term3, s.term4].filter(v => v > 0).length;
     const total = [s.term1, s.term2, s.term3, s.term4].filter(v => v !== undefined).length;
-    return total || paid || 3; // fallback 3 terms
+    return total || paid || 3;
   };
 
   // ── Build term rows dynamically for modal ────────────────
@@ -76,6 +90,26 @@ export default function TeacherFee() {
     return terms;
   };
 
+  // ✅ Show message if no class assigned
+  if (!loading && (!teacherClass || !teacherSection)) {
+    return (
+      <AppLayout requiredRole="teacher-admin">
+        <PageHeader title="Fee Details" subtitle="View student fee information" />
+        <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ width: 64, height: 64, background: '#fee2e2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Lock size={28} color="#ef4444" />
+          </div>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>
+            No Class Assigned
+          </h3>
+          <p style={{ color: '#64748b', fontSize: '0.875rem', maxWidth: 400, margin: '0 auto' }}>
+            You need to be assigned as a class teacher to view fee details.
+          </p>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout requiredRole="teacher-admin">
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -84,6 +118,27 @@ export default function TeacherFee() {
         title="Fee Details"
         subtitle={`${teacherClass} — Section ${teacherSection} • ${user?.branch}`}
       />
+
+      {/* ── Class Info Banner ─────────────────────────────── */}
+      <div style={{ 
+        background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', 
+        borderRadius: 12, 
+        padding: '14px 20px', 
+        marginBottom: 16,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        color: 'white'
+      }}>
+        <div>
+          <div style={{ fontSize: '0.75rem', opacity: 0.85 }}>Class Teacher For</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{teacherClass} — Section {teacherSection}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '0.75rem', opacity: 0.85 }}>{user?.branch}</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{user?.name}</div>
+        </div>
+      </div>
 
       {/* ── Summary Cards ─────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 18 }}>
@@ -159,35 +214,39 @@ export default function TeacherFee() {
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <TableWrapper>
           <thead>
-           <tr>
-  <th>S.No</th>
-  <th>Status</th>
-  <th>Student</th>
-  <th>Total Fee</th>
-  <th style={{ textAlign: 'center' }}>No. of Terms</th>
-  <th>Term 1</th>
-  <th>Term 2</th>
-  <th>Term 3</th>
-  <th>Paid</th>
-  <th>Due</th>
-  <th>View</th>
-</tr>
+            <tr>
+              <th>S.No</th>
+              <th>Status</th>
+              <th>Student</th>
+              <th>Total Fee</th>
+              <th style={{ textAlign: 'center' }}>No. of Terms</th>
+              <th>Term 1</th>
+              <th>Term 2</th>
+              <th>Term 3</th>
+              <th>Paid</th>
+              <th>Due</th>
+              <th>View</th>
+            </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} style={{ textAlign: 'center', padding: 48 }}>
-                <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
-                <span style={{ color: '#94a3b8', fontSize: '0.83rem' }}>Loading fee records...</span>
-              </td></tr>
+              <tr key="loading-row">
+                <td colSpan={11} style={{ textAlign: 'center', padding: 48 }}>
+                  <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
+                  <span style={{ color: '#94a3b8', fontSize: '0.83rem' }}>Loading fee records...</span>
+                </td>
+              </tr>
             ) : paginated.length === 0 ? (
-              <tr><td colSpan={11}><EmptyState message="No fee records found" /></td></tr>
+              <tr key="empty-row">
+                <td colSpan={11}><EmptyState message="No fee records found" /></td>
+              </tr>
             ) : paginated.map((s, i) => {
               const due = (s.totalFee || 0) - (s.paidFee || 0);
               const pct = s.totalFee ? Math.round((s.paidFee || 0) / s.totalFee * 100) : 0;
               const { label, color, bg } = getFeeStatus(s);
               const termCount = getTermCount(s);
               return (
-                <tr key={s._id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <tr key={s._id || s.id || `student-${i}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{(page - 1) * perPage + i + 1}</td>
 
                   {/* Status */}
@@ -210,7 +269,7 @@ export default function TeacherFee() {
 
                   <td style={{ fontWeight: 600 }}>₹{(s.totalFee || 0).toLocaleString()}</td>
 
-                  {/* ✅ No. of Terms column */}
+                  {/* No. of Terms column */}
                   <td style={{ textAlign: 'center' }}>
                     <span style={{
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -279,7 +338,6 @@ export default function TeacherFee() {
                 <span style={{ padding: '3px 12px', borderRadius: 20, fontSize: '0.73rem', fontWeight: 700, background: bg, color }}>
                   {label}
                 </span>
-                {/* ✅ No. of Terms in modal */}
                 <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 600 }}>
                   {termCount} Term{termCount !== 1 ? 's' : ''}
                 </span>
@@ -311,7 +369,7 @@ export default function TeacherFee() {
               </div>
             </div>
 
-            {/* ✅ Dynamic term breakdown */}
+            {/* Dynamic term breakdown */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8, letterSpacing: '0.05em' }}>
                 Term Breakdown — {termCount} Terms

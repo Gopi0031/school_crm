@@ -1,54 +1,80 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Attendance from '@/models/Attendance';
-import Student from '@/models/Student';
+import prisma from '@/lib/prisma';
 
 export async function POST(req) {
   try {
-    await connectDB();
     const { records } = await req.json();
-    if (!records?.length)
+    
+    console.log('[Bulk Attendance] Received records:', records?.length);
+    
+    if (!records?.length) {
       return NextResponse.json({ error: 'No records provided' }, { status: 400 });
-
-    // ── Upsert each attendance record ──────────────────────
-    const ops = records.map(r => ({
-      updateOne: {
-        filter: { entityId: r.entityId, entityType: r.entityType, date: r.date },
-        update: { $set: r },
-        upsert: true,
-      },
-    }));
-    await Attendance.bulkWrite(ops);
-
-    // ── ✅ Recalculate & sync presentDays for each student ──
-    if (records[0]?.entityType === 'student') {
-      await Promise.all(
-        records.map(async (r) => {
-          // Count ALL present days for this student across all dates
-          const presentCount = await Attendance.countDocuments({
-            entityId:   r.entityId,
-            entityType: 'student',
-            status:     'Present',
-          });
-          const totalCount = await Attendance.countDocuments({
-            entityId:   r.entityId,
-            entityType: 'student',
-          });
-
-          await Student.findByIdAndUpdate(r.entityId, {
-            $set: {
-              presentDays:      presentCount,
-              totalWorkingDays: totalCount,
-              absentDays:       totalCount - presentCount,
-            },
-          });
-        })
-      );
     }
 
-    return NextResponse.json({ success: true });
+    // ✅ Validate and filter records - ensure entityId exists
+    const validRecords = records.filter(r => {
+      if (!r.entityId) {
+        console.warn('[Bulk Attendance] Missing entityId:', r);
+        return false;
+      }
+      return true;
+    });
+
+    if (validRecords.length === 0) {
+      return NextResponse.json({ 
+        error: 'No valid records - all records are missing entityId' 
+      }, { status: 400 });
+    }
+
+    console.log('[Bulk Attendance] Valid records:', validRecords.length);
+    console.log('[Bulk Attendance] Sample:', validRecords[0]);
+
+    // Upsert all records
+    const results = await Promise.all(
+      validRecords.map(r => {
+        const entityId = String(r.entityId);
+        const date = r.date;
+        
+        return prisma.attendance.upsert({
+          where: { 
+            entityId_date: { 
+              entityId, 
+              date 
+            } 
+          },
+          update: { 
+            entityType: r.entityType || 'student',
+            status: r.status,
+            branch: r.branch || '',
+            class: r.class || '',
+            section: r.section || '',
+            markedBy: r.markedBy || '',
+          },
+          create: { 
+            entityId,
+            entityType: r.entityType || 'student',
+            date,
+            status: r.status,
+            branch: r.branch || '',
+            class: r.class || '',
+            section: r.section || '',
+            markedBy: r.markedBy || '',
+          },
+        });
+      })
+    );
+
+    console.log('[Bulk Attendance] ✅ Saved:', results.length);
+
+    return NextResponse.json({ 
+      success: true, 
+      message: `${validRecords.length} attendance record(s) saved`,
+      count: results.length
+    });
   } catch (err) {
-    console.error('Bulk attendance error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[Bulk Attendance] ❌ Error:', err);
+    return NextResponse.json({ 
+      error: err.message || 'Failed to save attendance' 
+    }, { status: 500 });
   }
 }

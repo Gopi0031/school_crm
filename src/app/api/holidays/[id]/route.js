@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Holiday from '@/models/Holiday';
+import prisma from '@/lib/prisma';
 
 export async function PUT(req, { params }) {
   try {
-    await connectDB();
-    const body = await req.json();
-    const holiday = await Holiday.findByIdAndUpdate(params.id, body, { new: true });
+    const { id } = await params;
+    const body   = await req.json();
+    const holiday = await prisma.holiday.update({ where: { id }, data: body });
     if (!holiday) return NextResponse.json({ error: 'Holiday not found' }, { status: 404 });
     return NextResponse.json({ success: true, data: holiday });
   } catch (err) {
@@ -16,8 +15,8 @@ export async function PUT(req, { params }) {
 
 export async function DELETE(req, { params }) {
   try {
-    await connectDB();
-    const holiday = await Holiday.findByIdAndDelete(params.id);
+    const { id } = await params;
+    const holiday = await prisma.holiday.delete({ where: { id } });
     if (!holiday) return NextResponse.json({ error: 'Holiday not found' }, { status: 404 });
     return NextResponse.json({ success: true, message: 'Holiday deleted' });
   } catch (err) {

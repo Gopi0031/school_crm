@@ -1,16 +1,25 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Branch from '@/models/Branch';
-import User from '@/models/User';
+import prisma from '@/lib/prisma';
+
 import bcrypt from 'bcryptjs';
 
 export async function GET() {
   try {
-    await connectDB();
-    const branches = await Branch.find()
-      .populate('adminId', '-password')
-      .sort({ createdAt: -1 });
-    return NextResponse.json({ success: true, data: branches });
+    const branches = await prisma.branch.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Attach admin user to each branch (replaces .populate)
+    const result = await Promise.all(branches.map(async (b) => {
+      if (!b.adminId) return { ...b, adminId: null };
+      const admin = await prisma.user.findUnique({
+        where: { id: b.adminId },
+        select: { id:true, name:true, username:true, email:true, phone:true, role:true, isActive:true, branch:true, branchId:true },
+      });
+      return { ...b, adminId: admin };
+    }));
+
+    return NextResponse.json({ success: true, data: result });
   } catch (err) {
     console.error('GET branches error:', err);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
@@ -19,48 +28,51 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    await connectDB();
     const { branchName, adminName, username, email, phone, password } = await req.json();
 
-    if (!branchName || !adminName || !username || !password) {
+    if (!branchName || !adminName || !username || !password)
       return NextResponse.json({ error: 'Required fields missing' }, { status: 400 });
-    }
 
-    // Check username already exists
-    const existing = await User.findOne({ username: username.toLowerCase().trim() });
-    if (existing) {
+    const existing = await prisma.user.findUnique({
+      where: { username: username.toLowerCase().trim() },
+    });
+    if (existing)
       return NextResponse.json({ error: 'Username already taken' }, { status: 400 });
-    }
+
+    const hashed = await bcrypt.hash(password, 10);
 
     // Create admin user
-    const hashed = await bcrypt.hash(password, 10);
-    const adminUser = await User.create({
-      username: username.toLowerCase().trim(),
-      password: hashed,
-      name:     adminName,
-      email:    email || '',
-      phone:    phone || '',
-      role:     'branch-admin',
-      isActive: true,
+    const adminUser = await prisma.user.create({
+      data: {
+        username: username.toLowerCase().trim(),
+        password: hashed,
+        name:     adminName,
+        email:    email || '',
+        phone:    phone || '',
+        role:     'branch-admin',
+        isActive: true,
+      },
     });
 
-    // Create branch linked to admin
-    const branch = await Branch.create({
-      name:     branchName,
-      email:    email || '',
-      phone:    phone || '',
-      adminId:  adminUser._id,
-      isActive: true,
+    // Create branch
+    const branch = await prisma.branch.create({
+      data: {
+        name:     branchName,
+        email:    email || '',
+        phone:    phone || '',
+        adminId:  adminUser.id,
+        isActive: true,
+      },
     });
 
     // Link branchId back to user
-    await User.findByIdAndUpdate(adminUser._id, {
-      branchId: String(branch._id),
-      branch:   branchName,
+    await prisma.user.update({
+      where: { id: adminUser.id },
+      data:  { branchId: branch.id, branch: branchName },
     });
 
-    const populated = await Branch.findById(branch._id).populate('adminId', '-password');
-    return NextResponse.json({ success: true, data: populated }, { status: 201 });
+    const { password: _, ...safeAdmin } = adminUser;
+    return NextResponse.json({ success: true, data: { ...branch, adminId: safeAdmin } }, { status: 201 });
   } catch (err) {
     console.error('POST branch error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });

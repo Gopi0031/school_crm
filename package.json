@@ -9,9 +9,10 @@
     "lint": "eslint",
     "seed": "node scripts/seed.js",
     "reset-password": "node scripts/reset-password.js",
-      "fix-students": "node scripts/fix-student-users.js"
+    "fix-students": "node scripts/fix-student-users.js"
   },
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "cloudinary": "^2.5.1",
     "dotenv": "^16.4.5",
@@ -19,6 +20,7 @@
     "mongoose": "^8.5.1",
     "next": "16.1.6",
     "nodemailer": "^6.9.14",
+    "prisma": "^5.22.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "^3.8.0",

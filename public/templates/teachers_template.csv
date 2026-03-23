@@ -1,3 +1,5 @@
-    name,rollNo,class,section,gender,parentName,phone,email,totalFee,bloodGroup,caste,aadhaar,yearOfJoining,academicYear
-    Ravi Kumar,2025001,Class 5,A,Male,Ramesh Kumar,9876543210,ravi@gmail.com,25000,O+,OC,123456789012,2025,2025-26
-    Anil Sharma,2025002,Class 5,B,Male,Suresh Sharma,9876543211,anil@gmail.com,25000,B+,BC,123456789013,2025,2025-26
+name,phone,email,qualification,experience,subject,class,section,joinYear,salary,aadhaar,pan,status,classTeacher,assignedClass,username,password
+Rajesh Kumar,9876543210,rajesh@gmail.com,M.Sc B.Ed,5 years,Mathematics,Class 5,A,2020,35000,123456789012,ABCDE1234F,Active,yes,Class 5,rajesh.kumar.arundelpet,Teacher@123
+Priya Sharma,9876543211,priya@gmail.com,M.A B.Ed,3 years,English,Class 5,B,2022,30000,123456789013,BCDEF2345G,Active,yes,Class 5,priya.sharma.arundelpet,Teacher@123
+Anil Reddy,9876543212,anil@gmail.com,M.Sc,7 years,Science,Class 6,A,2018,40000,123456789014,CDEFG3456H,Active,no,,anil.reddy.arundelpet,Teacher@123
+Sunita Devi,9876543213,sunita@gmail.com,B.Ed,2 years,Hindi,Class 4,A,2023,25000,123456789015,DEFGH4567I,Active,yes,Class 4,,Teacher@123

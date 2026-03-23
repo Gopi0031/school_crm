@@ -5,12 +5,17 @@ import { PageHeader, Badge, TableWrapper, Pagination, EmptyState, Modal, FormFie
 import { useAuth } from '@/context/AuthContext';
 import { Eye, Plus, Trash2, Edit2, Upload, Search, Printer, FileDown, X } from 'lucide-react';
 
+// Add this to your BLANK state at the top
+// Update BLANK constant
 const BLANK = {
   name:'', phone:'', email:'', qualification:'', experience:'',
   subject:'', aadhaar:'', pan:'', joinYear:'', salary:'',
-  class:'', section:'', status:'Active', username:'', password:'', confirmPassword:'',
+  class:'', section:'', 
+  status:'Active',  // ✅ Capital 'A'
+  classTeacher: false,
+  assignedClass: '',
+  username:'', password:'', confirmPassword:'',
 };
-
 const CLASSES  = ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
 const SECTIONS = ['A','B','C','D','E'];
 const TABS     = ['Details','Attendance','Salary','Subjects'];
@@ -105,54 +110,123 @@ export default function BranchAdminTeachers() {
     name ? `${name.toLowerCase().replace(/\s+/g,'.')}.${user?.branch?.toLowerCase().replace(/\s+/g,'') || 'school'}` : '';
 
   const saveTeacher = async () => {
-    setError('');
-    if (!form.name) { setError('Name is required'); return; }
-    if (!editTeacher) {
-      if (!form.username || !form.password) { setError('Username and password are required'); return; }
-      if (form.password !== form.confirmPassword) { setError('Passwords do not match'); return; }
-      if (form.password.length < 6) { setError('Password must be at least 6 characters'); return; }
-    } else {
-      if (form.password) {
-        if (form.password !== form.confirmPassword) { setError('Passwords do not match'); return; }
-        if (form.password.length < 6) { setError('Password must be at least 6 characters'); return; }
+  setError('');
+  if (!form.name) { setError('Name is required'); return; }
+  
+  // ✅ Validate class teacher fields
+  if (form.classTeacher && (!form.assignedClass || !form.section)) {
+    setError('Select both class and section for class teacher assignment');
+    return;
+  }
+  
+  if (!editTeacher) {
+    // Creating new teacher - username and password required
+    if (!form.username || !form.password) { 
+      setError('Username and password are required'); 
+      return; 
+    }
+    if (form.password !== form.confirmPassword) { 
+      setError('Passwords do not match'); 
+      return; 
+    }
+    if (form.password.length < 6) { 
+      setError('Password must be at least 6 characters'); 
+      return; 
+    }
+  } else {
+    // Editing existing teacher - validate password only if provided
+    if (form.password) {
+      if (form.password !== form.confirmPassword) { 
+        setError('Passwords do not match'); 
+        return; 
+      }
+      if (form.password.length < 6) { 
+        setError('Password must be at least 6 characters'); 
+        return; 
       }
     }
-    setSaving(true);
-    try {
-      const payload = { ...form, branch: user?.branch, branchId: user?.branchId };
-      const method  = editTeacher ? 'PUT' : 'POST';
-      const url     = editTeacher ? `/api/teachers/${editTeacher._id}` : '/api/teachers';
-      const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const d = await r.json();
-      if (!r.ok) { setError(d.error || 'Something went wrong'); return; }
-      if (!editTeacher) {
-        setCreatedCreds({ username: form.username, password: form.password, employeeId: d.data?.employeeId });
-      }
-      showToast(`✓ Teacher ${editTeacher ? 'updated' : 'added'} successfully`);
-      setShowAdd(false); setEditTeacher(null); setForm(BLANK); load();
-    } finally { setSaving(false); }
-  };
-
+  }
+  
+  setSaving(true);
+  try {
+    const payload = { ...form, branch: user?.branch, branchId: user?.branchId };
+    const method  = editTeacher ? 'PUT' : 'POST';
+    const url     = editTeacher ? `/api/teachers/${editTeacher._id}` : '/api/teachers';
+    
+    console.log('[Save Teacher] Payload:', { 
+      method, 
+      username: payload.username, 
+      hasPassword: !!payload.password 
+    });
+    
+    const r = await fetch(url, { 
+      method, 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify(payload) 
+    });
+    
+    const d = await r.json();
+    
+    if (!r.ok) { 
+      setError(d.error || 'Something went wrong'); 
+      return; 
+    }
+    
+    if (!editTeacher && form.username && form.password) {
+      setCreatedCreds({ 
+        username: form.username, 
+        password: form.password, 
+        employeeId: d.data?.employeeId 
+      });
+    }
+    
+    const successMsg = editTeacher 
+      ? `✓ Teacher updated successfully${form.password ? ' (credentials changed)' : ''}`
+      : `✓ Teacher added successfully${form.classTeacher ? ' and assigned as class teacher' : ''}`;
+    
+    showToast(successMsg);
+    setShowAdd(false); 
+    setEditTeacher(null); 
+    setForm(BLANK); 
+    load();
+  } catch (err) {
+    console.error('[Save Teacher Error]', err);
+    setError('Network error: ' + err.message);
+  } finally { 
+    setSaving(false); 
+  }
+};
   const deleteTeacher = async () => {
     await fetch(`/api/teachers/${deleteId}`, { method: 'DELETE' });
     showToast('Teacher removed'); setDeleteId(null); load();
   };
 
-  const openEdit = (t) => {
-    setEditTeacher(t);
-    setForm({
-      name: t.name || '', phone: t.phone || '', email: t.email || '',
-      qualification: t.qualification || '', experience: t.experience || '',
-      subject: t.subject || '', aadhaar: t.aadhaar || '', pan: t.pan || '',
-      joinYear: t.joinYear || '', salary: t.salary || '',
-      class: t.class || '', section: t.section || '',
-      status: t.status || 'Active',
-      username: t.username || '',
-      password: '', confirmPassword: '',
-    });
-    setShowAdd(true);
-    setError('');
-  };
+// Update openEdit function
+const openEdit = (t) => {
+  setEditTeacher(t);
+  setForm({
+    name: t.name || '', 
+    phone: t.phone || '', 
+    email: t.email || '',
+    qualification: t.qualification || '', 
+    experience: t.experience || '',
+    subject: t.subject || '', 
+    aadhaar: t.aadhaar || '', 
+    pan: t.pan || '',
+    joinYear: t.joinYear || '', 
+    salary: t.salary || '',
+    class: t.class || '', 
+    section: t.section || '',
+    status: t.status || 'Active',
+    classTeacher: t.classTeacher || false,     // ✅ Added
+    assignedClass: t.assignedClass || '',      // ✅ Added
+    username: t.username || '',
+    password: '', 
+    confirmPassword: '',
+  });
+  setShowAdd(true);
+  setError('');
+};
 
   const handlePrint = () => {
     const rows = filtered.map((t, i) => `
@@ -378,23 +452,77 @@ export default function BranchAdminTeachers() {
               onChange={e => { const v = e.target.value.toUpperCase(); setForm(p => ({ ...p, pan: v })); }}
               placeholder="e.g. ABCDE1234F" />
           </F>
-          <F label="Status">
-            <select className="select" value={form.status}
-              onChange={e => { const v = e.target.value; setForm(p => ({ ...p, status: v })); }}>
-              <option>Active</option><option>Inactive</option>
-            </select>
-          </F>
+         <F label="Status">
+  <select className="select" value={form.status}
+    onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
+    <option value="Active">Active</option>      {/* ✅ Capital */}
+    <option value="Inactive">Inactive</option>  {/* ✅ Capital */}
+  </select>
+</F>
           <div />
 
           {/* ── Login Credentials ── */}
-          <div style={{ gridColumn:'1/-1', borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:4 }}>
-            <p style={{ fontWeight:700, fontSize:'0.875rem', color:'#374151', marginBottom:4 }}>
-              🔐 Login Credentials
-              <span style={{ fontSize:'0.72rem', color:'#94a3b8', fontWeight:400, marginLeft:6 }}>
-                {editTeacher ? '(Changing username will update login)' : '(Required)'}
-              </span>
-            </p>
-          </div>
+        {/* After Status field, before Login Credentials section */}
+
+{/* ── Class Teacher Assignment ── */}
+<div style={{ gridColumn:'1/-1', borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:8 }}>
+  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+    <input 
+      type="checkbox" 
+      id="classTeacher"
+      checked={form.classTeacher}
+      onChange={e => {
+        const checked = e.target.checked;
+        setForm(p => ({ 
+          ...p, 
+          classTeacher: checked,
+          // Auto-set assignedClass if class/section already selected
+          ...(checked && p.class && p.section ? { assignedClass: p.class } : {})
+        }));
+      }}
+      style={{ width:16, height:16, cursor:'pointer' }}
+    />
+    <label htmlFor="classTeacher" style={{ fontWeight:600, fontSize:'0.875rem', color:'#374151', cursor:'pointer' }}>
+      🎓 Make this teacher a Class Teacher
+    </label>
+  </div>
+  
+  {form.classTeacher && (
+    <div style={{ 
+      background:'#f0f9ff', 
+      border:'1px solid #bae6fd', 
+      borderRadius:10, 
+      padding:'12px 16px',
+      display:'grid',
+      gridTemplateColumns:'1fr 1fr',
+      gap:12
+    }}>
+      <F label="Assigned Class" req>
+        <select 
+          className="select" 
+          value={form.assignedClass}
+          onChange={e => setForm(p => ({ ...p, assignedClass: e.target.value }))}
+        >
+          <option value="">Select Class</option>
+          {CLASSES.map(c => <option key={c}>{c}</option>)}
+        </select>
+      </F>
+      <F label="Section" req>
+        <select 
+          className="select" 
+          value={form.section}
+          onChange={e => setForm(p => ({ ...p, section: e.target.value }))}
+        >
+          <option value="">Select Section</option>
+          {SECTIONS.map(s => <option key={s} value={s}>Section {s}</option>)}
+        </select>
+      </F>
+      <div style={{ gridColumn:'1/-1', fontSize:'0.75rem', color:'#0369a1' }}>
+        ℹ️ This teacher will be assigned as class teacher for the selected class and section.
+      </div>
+    </div>
+  )}
+</div>
 
           <F label="Username" req={!editTeacher}>
   <input

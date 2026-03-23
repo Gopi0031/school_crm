@@ -1,9 +1,7 @@
-// src/app/api/students/bulk-upload/route.js
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import bcrypt from 'bcryptjs';
-import connectDB from '@/lib/mongodb';
-import mongoose from 'mongoose';
+import prisma from '@/lib/prisma';
 
 const REQUIRED = ['name', 'rollNo', 'class', 'section'];
 
@@ -31,13 +29,12 @@ function normalize(key) {
 }
 
 function mapRow(rawRow) {
-  const mapped  = {};
+  const mapped = {};
   const rawKeys = Object.keys(rawRow);
   for (const [field, aliases] of Object.entries(ALIASES)) {
     const matchedKey = rawKeys.find(k => aliases.includes(normalize(k)));
-    if (matchedKey !== undefined) {
+    if (matchedKey !== undefined)
       mapped[field] = rawRow[matchedKey]?.toString().trim() || '';
-    }
   }
   return mapped;
 }
@@ -51,9 +48,8 @@ export async function POST(request) {
     const branch   = formData.get('branch')   || '';
     const branchId = formData.get('branchId') || '';
 
-    if (!file) {
+    if (!file)
       return NextResponse.json({ success: false, message: 'No file provided' }, { status: 400 });
-    }
 
     const buffer   = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -62,114 +58,187 @@ export async function POST(request) {
       { defval: '' }
     );
 
-    if (!rawRows.length) {
+    if (!rawRows.length)
       return NextResponse.json({ success: false, message: 'File is empty' }, { status: 400 });
-    }
 
-    await connectDB();
-    const studentsCol = mongoose.connection.db.collection('students');
-    const usersCol    = mongoose.connection.db.collection('users');
-
-    let inserted      = 0;
-    let updated       = 0;
-    let skipped       = 0;
-    const errors      = [];
-    const credentials = [];
+    let inserted = 0, updated = 0, skipped = 0;
+    const errors = [], credentials = [];
 
     for (let i = 0; i < rawRows.length; i++) {
       const row    = mapRow(rawRows[i]);
       const rowNum = i + 2;
 
-      // Validate required fields
       const missing = REQUIRED.filter(f => !row[f]);
-      if (missing.length > 0) {
+      if (missing.length) {
         errors.push({ row: rowNum, reason: `Missing: ${missing.join(', ')}` });
-        skipped++; continue;
+        skipped++; 
+        continue;
       }
 
       try {
-        const { password: _p, ...rowClean } = row;
+        // ✅ REMOVED include: { user: true } - not supported by schema
+        const existing = await prisma.student.findFirst({
+          where: { rollNo: row.rollNo, branch },
+        });
 
-        // ✅ Find by rollNo only — branch mismatch was causing false "not found"
-        const existingStudent = await studentsCol.findOne({ rollNo: row.rollNo });
+        const rawUsername   = row.username || `student.${row.rollNo.toLowerCase()}`;
+        const baseUsername  = rawUsername.toLowerCase().trim();
+        const plainPwd      = row.password || DEFAULT_PASSWORD;
+        const hashedPwd     = await bcrypt.hash(plainPwd, 10);
 
-        if (existingStudent) {
-          // UPDATE existing student
-          await studentsCol.updateOne(
-            { rollNo: row.rollNo },
-            {
-              $set: {
-                ...rowClean,
+        if (existing) {
+          // ── UPDATE EXISTING STUDENT ──
+          
+          let finalUsername = existing.username || baseUsername;
+          let linkedUserId = existing.userId;
+
+          // Check if user exists by userId or find by rollNo
+          let userRecord = null;
+          if (linkedUserId) {
+            userRecord = await prisma.user.findUnique({ where: { id: linkedUserId } });
+          }
+          if (!userRecord) {
+            userRecord = await prisma.user.findFirst({
+              where: { rollNo: row.rollNo, role: 'student' }
+            });
+            linkedUserId = userRecord?.id;
+          }
+
+          // Case 1: Student has NO linked user → Create one
+          if (!userRecord) {
+            const userExists = await prisma.user.findUnique({ where: { username: baseUsername } });
+            finalUsername = userExists ? `${baseUsername}.${row.rollNo}` : baseUsername;
+
+            userRecord = await prisma.user.create({
+              data: {
+                username:  finalUsername,
+                password:  hashedPwd,
+                role:      'student',
+                name:      row.name,
+                email:     row.email || '',
+                phone:     row.phone || '',
                 branch,
                 branchId,
-                updatedAt: new Date(),
+                rollNo:    row.rollNo,
+                class:     row.class,
+                section:   row.section,
+                isActive:  true,
               },
-            }
-          );
+            });
 
-          // Update linked user (name + email only, never touch username/password)
-          if (existingStudent.userId) {
-            await usersCol.updateOne(
-              { _id: existingStudent.userId },
-              {
-                $set: {
-                  name:      row.name,
-                  email:     row.email || '',
-                  updatedAt: new Date(),
-                },
-              }
-            );
+            credentials.push({
+              name:     row.name,
+              rollNo:   row.rollNo,
+              username: finalUsername,
+              password: plainPwd,
+              status:   'User Created (was missing)',
+            });
+
+            linkedUserId = userRecord.id;
+          } 
+          // Case 2: User exists → Update it
+          else {
+            finalUsername = userRecord.username;
+
+            // Update user data
+            const userUpdateData = {
+              name:     row.name,
+              email:    row.email    || userRecord.email,
+              phone:    row.phone    || userRecord.phone,
+              class:    row.class,
+              section:  row.section,
+            };
+
+            // Update password if provided in CSV
+            if (row.password) {
+              userUpdateData.password = hashedPwd;
+              credentials.push({
+                name:     row.name,
+                rollNo:   row.rollNo,
+                username: finalUsername,
+                password: plainPwd,
+                status:   'Password Updated',
+              });
+            }
+
+            await prisma.user.update({
+              where: { id: userRecord.id },
+              data: userUpdateData,
+            }).catch(err => console.warn('[user update skipped]', err.message));
           }
+
+          // Update student record
+          await prisma.student.update({
+            where: { id: existing.id },
+            data: {
+              name:          row.name,
+              class:         row.class,
+              section:       row.section,
+              gender:        row.gender        || existing.gender,
+              parentName:    row.parentName    || existing.parentName,
+              phone:         row.phone         || existing.phone,
+              email:         row.email         || existing.email,
+              totalFee:      row.totalFee ? Number(row.totalFee) : existing.totalFee,
+              bloodGroup:    row.bloodGroup    || existing.bloodGroup,
+              caste:         row.caste         || existing.caste,
+              aadhaar:       row.aadhaar       || existing.aadhaar,
+              yearOfJoining: row.yearOfJoining || existing.yearOfJoining,
+              academicYear:  row.academicYear  || existing.academicYear,
+              username:      finalUsername,
+              userId:        linkedUserId,
+            },
+          });
 
           updated++;
 
         } else {
-          // INSERT new student + user
-          const rawUsername  = row.username || `student.${row.rollNo.toLowerCase()}`;
-          const username     = rawUsername.toLowerCase().trim();
-          const plainPwd     = row.password || DEFAULT_PASSWORD;
+          // ── INSERT NEW STUDENT + USER ──
+          
+          const userExists    = await prisma.user.findUnique({ where: { username: baseUsername } });
+          const finalUsername = userExists ? `${baseUsername}.${row.rollNo}` : baseUsername;
 
-          // Handle duplicate username by appending rollNo suffix
-          const userExists   = await usersCol.findOne({
-            username: { $regex: `^${username}$`, $options: 'i' },
-          });
-          const finalUsername = userExists ? `${username}.${row.rollNo}` : username;
-
-          const hashedPwd = await bcrypt.hash(plainPwd, 10);
-          const studentId = new mongoose.Types.ObjectId();
-          const userId    = new mongoose.Types.ObjectId();   // ← pre-generate
-
-          await studentsCol.insertOne({
-            _id: studentId,
-            ...rowClean,
-            branch,
-            branchId,
-            username: finalUsername,
-            userId,
-            status:           'Active',
-            paidFee:          0,
-            term1:            0,
-            term2:            0,
-            term3:            0,
-            presentDays:      0,
-            totalWorkingDays: 220,
-            createdAt:        new Date(),
-            updatedAt:        new Date(),
+          // Create User
+          const userRecord = await prisma.user.create({
+            data: {
+              username:  finalUsername,
+              password:  hashedPwd,
+              role:      'student',
+              name:      row.name,
+              email:     row.email    || '',
+              phone:     row.phone    || '',
+              branch,
+              branchId,
+              rollNo:    row.rollNo,
+              class:     row.class,
+              section:   row.section,
+              isActive:  true,
+            },
           });
 
-          await usersCol.insertOne({
-            _id:       userId,
-            username:  finalUsername,
-            password:  hashedPwd,
-            role:      'student',
-            branch,
-            branchId,
-            studentId,
-            rollNo:    row.rollNo,
-            name:      row.name,
-            email:     row.email || '',
-            isActive:  true,
-            createdAt: new Date(),
+          // Create Student
+          await prisma.student.create({
+            data: {
+              name:          row.name,
+              rollNo:        row.rollNo,
+              class:         row.class,
+              section:       row.section,
+              gender:        row.gender        || '',
+              parentName:    row.parentName    || '',
+              phone:         row.phone         || '',
+              email:         row.email         || '',
+              bloodGroup:    row.bloodGroup    || '',
+              caste:         row.caste         || '',
+              aadhaar:       row.aadhaar       || '',
+              yearOfJoining: row.yearOfJoining || '',
+              academicYear:  row.academicYear  || '2025-26',
+              totalFee:      Number(row.totalFee) || 0,
+              branch,
+              branchId,
+              username:      finalUsername,
+              userId:        userRecord.id,
+              status:        'Active',
+              paidFee:       0,
+            },
           });
 
           credentials.push({
@@ -177,17 +246,18 @@ export async function POST(request) {
             rollNo:   row.rollNo,
             username: finalUsername,
             password: plainPwd,
+            status:   'New Student',
           });
           inserted++;
         }
 
       } catch (err) {
-        // ✅ Catch duplicate key but still report clearly
+        console.error(`Row ${rowNum} error:`, err);
         errors.push({
-          row: rowNum,
-          reason: err.code === 11000
-            ? `Duplicate rollNo "${row.rollNo}" — already exists and could not be updated`
-            : err.message,
+          row:    rowNum,
+          reason: err.code === 'P2002'
+            ? `Duplicate: ${err.meta?.target?.join(', ') || 'unique constraint'}`
+            : err.message?.slice(0, 100) || 'Unknown error',
         });
         skipped++;
       }
@@ -195,8 +265,12 @@ export async function POST(request) {
 
     return NextResponse.json({
       success: inserted > 0 || updated > 0,
-      message: `${inserted} inserted, ${updated} updated, ${skipped} skipped.`,
-      inserted, updated, skipped, errors, credentials,
+      message: `✅ ${inserted} inserted, ${updated} updated, ${skipped} skipped.`,
+      inserted, 
+      updated, 
+      skipped, 
+      errors: errors.slice(0, 10), // Limit errors shown
+      credentials,
     });
 
   } catch (err) {

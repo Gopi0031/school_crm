@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Event from '@/models/Event';
+import prisma from '@/lib/prisma';
 
 export async function PUT(req, { params }) {
   try {
-    await connectDB();
-    const body  = await req.json();
-    const event = await Event.findByIdAndUpdate(params.id, body, { new: true });
+    const { id } = await params;
+    const body   = await req.json();
+    const event  = await prisma.event.update({ where: { id }, data: body });
     if (!event) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json({ success: true, data: event });
   } catch (err) {
@@ -16,8 +15,8 @@ export async function PUT(req, { params }) {
 
 export async function DELETE(req, { params }) {
   try {
-    await connectDB();
-    await Event.findByIdAndDelete(params.id);
+    const { id } = await params;
+    await prisma.event.delete({ where: { id } });
     return NextResponse.json({ success: true, message: 'Deleted' });
   } catch (err) {
     return NextResponse.json({ error: 'Server error' }, { status: 500 });

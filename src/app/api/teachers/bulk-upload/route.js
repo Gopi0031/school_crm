@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import bcrypt from 'bcryptjs';
-import connectDB from '@/lib/mongodb';
+import { connectDB } from '@/lib/prisma';
 import mongoose from 'mongoose';
 
 const ALIASES = {
@@ -18,6 +18,8 @@ const ALIASES = {
   aadhaar:       ['aadhaar', 'aadhar'],
   pan:           ['pan'],
   status:        ['status'],
+  classTeacher:  ['classteacher', 'class teacher', 'ct'],
+  assignedClass: ['assignedclass', 'assigned class'],
   username:      ['username', 'login', 'userid', 'user name'],
   password:      ['password', 'pwd', 'pass'],
 };
@@ -41,10 +43,10 @@ function generateEmployeeId(name, index) {
   return `${prefix}${Date.now().toString().slice(-4)}${index}`;
 }
 
-function autoUsername(name, branch, index) {
+function autoUsername(name, branch) {
   const base = name.toLowerCase().replace(/\s+/g, '.');
   const bran = branch.toLowerCase().replace(/\s+/g, '');
-  return `${base}.${bran}`;  // removed index — cleaner username
+  return `${base}.${bran}`;
 }
 
 const DEFAULT_PASSWORD = 'Teacher@123';
@@ -87,59 +89,95 @@ export async function POST(request) {
 
       if (!row.name) {
         errors.push({ row: rowNum, reason: 'Name is required' });
-        skipped++; continue;
+        skipped++; 
+        continue;
       }
 
       const employeeId = generateEmployeeId(row.name, i);
 
-      // ── FIX 1: always normalize username to lowercase ────────
-      const rawUsername = row.username || autoUsername(row.name, branch, i);
+      // Normalize username to lowercase
+      const rawUsername = row.username || autoUsername(row.name, branch);
       const username    = rawUsername.toLowerCase().trim();
       const plainPwd    = row.password || DEFAULT_PASSWORD;
 
-      // ── FIX 2: check collision against normalized username ───
+      // Check collision against normalized username
       const userExists = await usersCol.findOne({
         username: { $regex: `^${username}$`, $options: 'i' },
       });
       if (userExists) {
         errors.push({ row: rowNum, reason: `Username "${username}" already taken` });
-        skipped++; continue;
+        skipped++; 
+        continue;
+      }
+
+      // Check if class teacher assignment conflicts
+      const isClassTeacher = row.classTeacher === 'true' || row.classTeacher === 'yes' || row.classTeacher === '1' || row.classTeacher === 'Yes' || row.classTeacher === 'TRUE';
+      const assignedClass = row.assignedClass || (isClassTeacher ? row.class : '');
+      const section = row.section || '';
+
+      if (isClassTeacher && assignedClass && section) {
+        const existingCT = await teachersCol.findOne({
+          assignedClass,
+          section,
+          classTeacher: true,
+          branch,
+        });
+        if (existingCT) {
+          errors.push({ row: rowNum, reason: `${assignedClass}-${section} already has class teacher: ${existingCT.name}` });
+          skipped++;
+          continue;
+        }
       }
 
       const hashedPwd = await bcrypt.hash(plainPwd, 10);
       const teacherId = new mongoose.Types.ObjectId();
       const userId    = new mongoose.Types.ObjectId();
 
-      const { password: _p, ...rowClean } = row;
+      // Remove password from row data
+      const { password: _p, classTeacher: _ct, ...rowClean } = row;
 
       teachers.push({
         _id: teacherId,
         ...rowClean,
-        branch, branchId, employeeId,
-        username,   // normalized
+        branch, 
+        branchId, 
+        employeeId,
+        username,
         userId,
-        status:      row.status || 'Active',
-        salary:      Number(row.salary) || 0,
-        presentDays: 0, absentDays: 0, totalDays: 0,
-        createdAt:   new Date(), updatedAt: new Date(),
+        classTeacher: isClassTeacher,
+        assignedClass: isClassTeacher ? assignedClass : '',
+        section: section,
+        status: row.status || 'Active',
+        salary: Number(row.salary) || 0,
+        presentDays: 0, 
+        absentDays: 0, 
+        totalDays: 0,
+        createdAt: new Date(), 
+        updatedAt: new Date(),
       });
 
       users.push({
-        _id:        userId,
-        username,   // normalized
-        password:   hashedPwd,
-        role:       'teacher',
+        _id: userId,
+        username,
+        password: hashedPwd,
+        role: 'teacher',
         branch,
         branchId,
         teacherId,
         employeeId,
-        name:       row.name,
-        email:      row.email || '',
-        isActive:   true,   // ── FIX 3: missing isActive ────────
-        createdAt:  new Date(),
+        name: row.name,
+        email: row.email || '',
+        isActive: true,
+        createdAt: new Date(),
       });
 
-      credentials.push({ name: row.name, employeeId, username, password: plainPwd });
+      credentials.push({ 
+        name: row.name, 
+        employeeId, 
+        username, 
+        password: plainPwd,
+        classTeacher: isClassTeacher ? `${assignedClass}-${section}` : ''
+      });
     }
 
     if (teachers.length) {
@@ -148,13 +186,13 @@ export async function POST(request) {
     }
 
     return NextResponse.json({
-      success:  teachers.length > 0,
+      success: teachers.length > 0,
       inserted: teachers.length,
       skipped,
-      errors,
+      errors: errors.slice(0, 10), // Limit errors shown
       credentials,
-      message:  teachers.length > 0
-        ? `${teachers.length} teacher(s) inserted, ${skipped} skipped.`
+      message: teachers.length > 0
+        ? `✅ ${teachers.length} teacher(s) inserted, ${skipped} skipped.`
         : `No teachers inserted. ${skipped} row(s) skipped.`,
     });
 

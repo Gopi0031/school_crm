@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/context/AuthContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Users, UserCheck, TrendingUp, CreditCard, BookOpen, Calendar } from 'lucide-react';
+import { Users, UserCheck, TrendingUp, CreditCard, Calendar, Lock, GraduationCap } from 'lucide-react';
 
 function StatCard({ title, value, sub, color, icon }) {
   return (
@@ -21,21 +21,45 @@ function StatCard({ title, value, sub, color, icon }) {
 }
 
 export default function TeacherAdminDashboard() {
-  const { user }    = useAuth();
-  const [stats,   setStats]   = useState(null);
+  const { user } = useAuth();
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // ✅ Get teacher's assigned class
+  const teacherClass = user?.assignedClass || user?.class || '';
+  const teacherSection = user?.section || '';
 
   useEffect(() => {
     if (!user) return;
+    
+    // ✅ Only fetch if teacher has assigned class
+    if (!teacherClass || !teacherSection) {
+      console.log('[Dashboard] No class assigned:', { teacherClass, teacherSection });
+      setLoading(false);
+      return;
+    }
+
     const params = new URLSearchParams();
-    if (user.branch)  params.set('branch',  user.branch);
-    if (user.class)   params.set('class',   user.class);
-    if (user.section) params.set('section', user.section);
+    params.set('branch', user.branch || '');
+    params.set('class', teacherClass);
+    params.set('section', teacherSection);
+
+    console.log('[Dashboard] Fetching stats for:', { 
+      branch: user.branch, 
+      class: teacherClass, 
+      section: teacherSection 
+    });
+
     fetch(`/api/stats/teacher-admin?${params}`)
       .then(r => r.json())
-      .then(d => { if (d.success) setStats(d.data); })
+      .then(d => { 
+        if (d.success) {
+          console.log('[Dashboard] Stats loaded:', d.data);
+          setStats(d.data); 
+        }
+      })
       .finally(() => setLoading(false));
-  }, [user]);
+  }, [user, teacherClass, teacherSection]);
 
   if (loading) return (
     <AppLayout requiredRole="teacher-admin">
@@ -47,10 +71,88 @@ export default function TeacherAdminDashboard() {
     </AppLayout>
   );
 
-  const s      = stats || {};
+  // ✅ Show message if no class assigned
+  if (!teacherClass || !teacherSection) {
+    return (
+      <AppLayout requiredRole="teacher-admin">
+        <div style={{ 
+          background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', 
+          borderRadius: 16, 
+          padding: '22px 28px', 
+          marginBottom: 22, 
+          color: 'white' 
+        }}>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0 }}>
+            👋 Welcome, {user?.name?.split(' ')[0]}!
+          </h1>
+          <p style={{ opacity: 0.85, marginTop: 5, fontSize: '0.875rem' }}>
+            {user?.branch}
+          </p>
+        </div>
+
+        <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ 
+            width: 80, height: 80, 
+            background: '#fef3c7', 
+            borderRadius: '50%', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            margin: '0 auto 20px' 
+          }}>
+            <GraduationCap size={36} color="#f59e0b" />
+          </div>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1e293b', marginBottom: 10 }}>
+            No Class Assigned Yet
+          </h3>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', maxWidth: 450, margin: '0 auto 20px' }}>
+            You haven't been assigned as a class teacher yet. Once assigned, you'll be able to:
+          </p>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(2, 1fr)', 
+            gap: 12, 
+            maxWidth: 400, 
+            margin: '0 auto 24px' 
+          }}>
+            {[
+              '📊 View student statistics',
+              '✅ Mark attendance',
+              '📈 Track performance',
+              '💰 View fee status',
+            ].map((item, i) => (
+              <div key={i} style={{ 
+                background: '#f8fafc', 
+                padding: '10px 14px', 
+                borderRadius: 8, 
+                fontSize: '0.8rem', 
+                color: '#374151',
+                textAlign: 'left'
+              }}>
+                {item}
+              </div>
+            ))}
+          </div>
+          <div style={{ 
+            background: '#eff6ff', 
+            border: '1px solid #bfdbfe', 
+            borderRadius: 10, 
+            padding: '14px 20px', 
+            display: 'inline-block' 
+          }}>
+            <p style={{ color: '#1e40af', fontSize: '0.85rem', margin: 0 }}>
+              💡 Contact your branch administrator to get assigned as a class teacher.
+            </p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  const s = stats || {};
   const attPct = s.totalStudents ? Math.round((s.presentToday || 0) / s.totalStudents * 100) : 0;
-  const feePct = s.totalFee      ? Math.round((s.paidFee      || 0) / s.totalFee      * 100) : 0;
-  const today  = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const feePct = s.totalFee ? Math.round((s.paidFee || 0) / s.totalFee * 100) : 0;
+  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   return (
     <AppLayout requiredRole="teacher-admin">
@@ -63,7 +165,7 @@ export default function TeacherAdminDashboard() {
               👋 Welcome, {user?.name?.split(' ')[0]}!
             </h1>
             <p style={{ opacity: 0.85, marginTop: 5, fontSize: '0.875rem' }}>
-              {user?.class} — Section {user?.section} &nbsp;•&nbsp; {user?.branch}
+              Class Teacher: <strong>{teacherClass} — Section {teacherSection}</strong> &nbsp;•&nbsp; {user?.branch}
             </p>
           </div>
           <div style={{ textAlign: 'right', fontSize: '0.8rem', opacity: 0.85 }}>
@@ -76,13 +178,13 @@ export default function TeacherAdminDashboard() {
 
       {/* ── Stat Cards ──────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 14, marginBottom: 22 }}>
-        <StatCard title="Total Students"  value={s.totalStudents  || 0}                              color="#4f46e5" icon={<Users     size={20} />} />
-        <StatCard title="Male"            value={s.maleStudents   || 0}                              color="#3b82f6" icon={<Users     size={20} />} />
-        <StatCard title="Female"          value={s.femaleStudents || 0}                              color="#ec4899" icon={<Users     size={20} />} />
-        <StatCard title="Present Today"   value={s.presentToday   || 0} sub={`${attPct}% rate`}     color="#10b981" icon={<UserCheck size={20} />} />
-        <StatCard title="Pass %"          value={`${s.passPercentage || 0}%`} sub="Academic year"   color="#f59e0b" icon={<TrendingUp size={20} />} />
-        <StatCard title="Fee Collected"   value={`₹${((s.paidFee||0)/1000).toFixed(1)}K`}
-                                          sub={`of ₹${((s.totalFee||0)/1000).toFixed(1)}K`}         color="#8b5cf6" icon={<CreditCard size={20} />} />
+        <StatCard title="Total Students" value={s.totalStudents || 0} color="#4f46e5" icon={<Users size={20} />} />
+        <StatCard title="Male" value={s.maleStudents || 0} color="#3b82f6" icon={<Users size={20} />} />
+        <StatCard title="Female" value={s.femaleStudents || 0} color="#ec4899" icon={<Users size={20} />} />
+        <StatCard title="Present Today" value={s.presentToday || 0} sub={`${attPct}% rate`} color="#10b981" icon={<UserCheck size={20} />} />
+        <StatCard title="Pass %" value={`${s.passPercentage || 0}%`} sub="Academic year" color="#f59e0b" icon={<TrendingUp size={20} />} />
+        <StatCard title="Fee Collected" value={`₹${((s.paidFee || 0) / 1000).toFixed(1)}K`}
+          sub={`of ₹${((s.totalFee || 0) / 1000).toFixed(1)}K`} color="#8b5cf6" icon={<CreditCard size={20} />} />
       </div>
 
       {/* ── Main Grid ───────────────────────────────────── */}
@@ -93,7 +195,7 @@ export default function TeacherAdminDashboard() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h3 style={{ fontWeight: 700, margin: 0, fontSize: '0.95rem' }}>Monthly Attendance — Last 6 Months</h3>
             <span style={{ fontSize: '0.72rem', color: '#94a3b8', background: '#f1f5f9', padding: '3px 10px', borderRadius: 20 }}>
-              {user?.class} — {user?.section}
+              {teacherClass} — {teacherSection}
             </span>
           </div>
           <ResponsiveContainer width="100%" height={220}>
@@ -115,8 +217,8 @@ export default function TeacherAdminDashboard() {
 
           {[
             { l: 'Total Students', v: s.totalStudents || 0, c: '#4f46e5' },
-            { l: 'Present',        v: s.presentToday  || 0, c: '#10b981' },
-            { l: 'Absent',         v: s.absentToday   || 0, c: '#ef4444' },
+            { l: 'Present', v: s.presentToday || 0, c: '#10b981' },
+            { l: 'Absent', v: s.absentToday || 0, c: '#ef4444' },
           ].map(({ l, v, c }) => (
             <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: `${c}10`, padding: '11px 14px', borderRadius: 10, border: `1px solid ${c}20` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -154,6 +256,10 @@ export default function TeacherAdminDashboard() {
           </div>
         </div>
       </div>
+
+      <style jsx global>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </AppLayout>
   );
 }

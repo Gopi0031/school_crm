@@ -1,20 +1,32 @@
 import mongoose from 'mongoose';
 
 const UserSchema = new mongoose.Schema({
-  username:     { type: String, required: true, unique: true, lowercase: true, trim: true },
-  password:     { type: String, required: true },
-  role:         { type: String, enum: ['super-admin','branch-admin','teacher-admin','student'], required: true },
-  name:         { type: String, required: true },
-  email:        { type: String, default: '' },
-  phone:        { type: String, default: '' },
-  branch:       { type: String, default: '' },
-  branchId:     { type: String, default: '' },
-  class:        { type: String, default: '' },
-  section:      { type: String, default: '' },
-  rollNo:       { type: String, default: '' },
-  studentId:    { type: String, default: '' },
-  profileImage: { type: String, default: '' },
-  isActive:     { type: Boolean, default: true },
+  username:      { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password:      { type: String, required: true },
+  role:          { type: String, enum: ['super-admin', 'branch-admin', 'teacher-admin', 'teacher', 'student'], required: true },
+  name:          { type: String, trim: true },
+  email:         { type: String, lowercase: true, trim: true },
+  phone:         { type: String, trim: true },
+  branch:        { type: String, trim: true },
+  branchId:      { type: String },
+  
+  // For students
+  rollNo:        { type: String },
+  studentId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
+  
+  // For teachers
+  employeeId:    { type: String },
+  teacherId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Teacher' },
+  
+  // ✅ Class teacher fields
+  class:         { type: String },
+  section:       { type: String },
+  assignedClass: { type: String },
+  
+  isActive:      { type: Boolean, default: true },
 }, { timestamps: true });
+
+UserSchema.index({ username: 1 });
+UserSchema.index({ role: 1, branch: 1 });
 
 export default mongoose.models.User || mongoose.model('User', UserSchema);

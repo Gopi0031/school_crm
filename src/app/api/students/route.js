@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Student from '@/models/Student';
-import User from '@/models/User';
+import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 
 export async function GET(req) {
   try {
-    await connectDB();
     const { searchParams } = new URL(req.url);
     const branch      = searchParams.get('branch');
     const cls         = searchParams.get('class');
@@ -16,26 +13,28 @@ export async function GET(req) {
     const academicYear = searchParams.get('academicYear');
     const branchId    = searchParams.get('branchId');
 
-    const query = {};
-    if (branch)      query.branch      = branch;
-    // ✅ Replace strict match with regex match for class
-if (cls) query.class = { $regex: new RegExp(`^${cls}$`, 'i') };
-if (section) query.section = { $regex: new RegExp(`^${section}$`, 'i') };
+    const students = await prisma.student.findMany({
+      where: {
+        ...(branch       && { branch }),
+        ...(cls          && { class: { equals: cls, mode: 'insensitive' } }),
+        ...(section      && { section: { equals: section, mode: 'insensitive' } }),
+        ...(status       && { status }),
+        ...(academicYear && { academicYear }),
+        ...(branchId     && { branchId }),
+        ...(search && {
+          OR: [
+            { name:       { contains: search, mode: 'insensitive' } },
+            { rollNo:     { contains: search, mode: 'insensitive' } },
+            { email:      { contains: search, mode: 'insensitive' } },
+            { phone:      { contains: search, mode: 'insensitive' } },
+            { parentName: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
+      },
+      // ✅ Removed include - username is stored directly on student
+      orderBy: { rollNo: 'asc' },
+    });
 
-    if (status)      query.status      = status;
-    if (academicYear) query.academicYear = academicYear;
-    if (branchId)    query.branchId    = branchId;
-    if (search) {
-      query.$or = [
-        { name:       { $regex: search, $options: 'i' } },
-        { rollNo:     { $regex: search, $options: 'i' } },
-        { email:      { $regex: search, $options: 'i' } },
-        { phone:      { $regex: search, $options: 'i' } },
-        { parentName: { $regex: search, $options: 'i' } },
-      ];
-    }
-
-    const students = await Student.find(query).sort({ rollNo: 1 });
     return NextResponse.json({ success: true, data: students });
   } catch (err) {
     console.error('GET students error:', err);
@@ -45,7 +44,6 @@ if (section) query.section = { $regex: new RegExp(`^${section}$`, 'i') };
 
 export async function POST(req) {
   try {
-    await connectDB();
     const body = await req.json();
     const {
       name, rollNo, class: cls, section, gender, bloodGroup, caste,
@@ -54,45 +52,58 @@ export async function POST(req) {
       username, password,
     } = body;
 
-    if (!name || !rollNo || !cls || !section) {
+    if (!name || !rollNo || !cls || !section)
       return NextResponse.json({ error: 'Name, Roll No, Class and Section are required' }, { status: 400 });
-    }
 
-    const existing = await Student.findOne({ rollNo, branch });
+    const existing = await prisma.student.findFirst({ where: { rollNo, branch } });
     if (existing) return NextResponse.json({ error: 'Roll number already exists' }, { status: 400 });
 
     let userId = null;
-    // Create student login if credentials provided
-    if (username && password) {
-      const existingUser = await User.findOne({ username: username.toLowerCase() });
-      if (existingUser) return NextResponse.json({ error: 'Username already taken' }, { status: 400 });
+    let finalUsername = username?.toLowerCase().trim() || '';
+
+    if (finalUsername && password) {
+      const existingUser = await prisma.user.findUnique({ where: { username: finalUsername } });
+      if (existingUser) {
+        return NextResponse.json({ error: 'Username already taken' }, { status: 400 });
+      }
 
       const hashed = await bcrypt.hash(password, 10);
-      const userRecord = await User.create({
-        username: username.toLowerCase(),
-        password: hashed,
-        role: 'student',
-        name,
-        email,
-        phone,
-        branch,
-        branchId,
-        class:   cls,
-        section,
-        rollNo,
-        isActive: true,
+      const userRecord = await prisma.user.create({
+        data: {
+          username: finalUsername,
+          password: hashed,
+          role: 'student',
+          name, 
+          email: email || '', 
+          phone: phone || '',
+          branch: branch || '', 
+          branchId: branchId || '',
+          class: cls, 
+          section, 
+          rollNo, 
+          isActive: true,
+        },
       });
-      userId = userRecord._id;
+      userId = userRecord.id;
     }
 
-    const student = await Student.create({
-      name, rollNo, class: cls, section, gender, bloodGroup, caste,
-      aadhaar, address, parentName, phone, email, branch, branchId,
-      academicYear: academicYear || '2024-25',
-      yearOfJoining, dateOfJoining,
-      totalFee: Number(totalFee) || 0,
-      userId,
-      status: 'Active',
+    const student = await prisma.student.create({
+      data: {
+        name, rollNo, class: cls, section,
+        gender: gender || '', bloodGroup: bloodGroup || '',
+        caste: caste || '', aadhaar: aadhaar || '',
+        address: address || '', parentName: parentName || '',
+        phone: phone || '', email: email || '',
+        branch: branch || '', branchId: branchId || '',
+        academicYear: academicYear || '2025-26',
+        yearOfJoining: yearOfJoining || '',
+        dateOfJoining: dateOfJoining || '',
+        totalFee: Number(totalFee) || 0,
+        username: finalUsername,
+        userId, 
+        status: 'Active',
+        paidFee: 0,
+      },
     });
 
     return NextResponse.json({ success: true, data: student }, { status: 201 });

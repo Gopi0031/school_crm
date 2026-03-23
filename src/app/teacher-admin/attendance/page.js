@@ -3,47 +3,75 @@ import { useState, useEffect, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { PageHeader, Badge, TableWrapper, Pagination, EmptyState, Modal } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
-import { Eye, Search, Calendar, FileDown, Loader } from 'lucide-react';
+import { Eye, Search, Calendar, FileDown, Loader, Lock } from 'lucide-react';
 
 export default function TeacherAttendancePage() {
-  const { user }   = useAuth();
-  const today      = new Date().toISOString().split('T')[0];
+  const { user } = useAuth();
+  const today = new Date().toISOString().split('T')[0];
+  
   const [students, setStudents] = useState([]);
-  const [attMap, setAttMap]     = useState({});
-  const [loading, setLoading]   = useState(true);
-  const [cls, setCls]           = useState(user?.class   || '');
-  const [section, setSection]   = useState(user?.section || '');
-  const [date, setDate]         = useState(today);
-  const [search, setSearch]     = useState('');
-  const [page, setPage]         = useState(1);
-  const [viewStudent, setViewStudent]   = useState(null);
-  const [monthlyAtt, setMonthlyAtt]     = useState([]);
+  const [attMap, setAttMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [date, setDate] = useState(today);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [viewStudent, setViewStudent] = useState(null);
+  const [monthlyAtt, setMonthlyAtt] = useState([]);
   const [loadingMonthly, setLoadingMonthly] = useState(false);
-  const [exporting, setExporting]       = useState(false);
+  const [exporting, setExporting] = useState(false);
   const perPage = 10;
 
+  // ✅ Get teacher's assigned class and section
+  const teacherClass = user?.assignedClass || user?.class || '';
+  const teacherSection = user?.section || '';
+
   const load = async () => {
+    if (!teacherClass || !teacherSection) {
+      console.log('[Attendance] Teacher class/section not found:', { teacherClass, teacherSection });
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    const params = new URLSearchParams({ branch: user?.branch || '' });
-    if (cls)     params.set('class',   cls);
-    if (section) params.set('section', section);
+    const params = new URLSearchParams({ 
+      branch: user?.branch || '',
+      class: teacherClass,
+      section: teacherSection
+    });
 
-    const [sRes, aRes] = await Promise.all([
-      fetch(`/api/students?${params}`),
-      fetch(`/api/attendance?entityType=student&date=${date}&branch=${user?.branch||''}&class=${cls}&section=${section}`),
-    ]);
-    const [sData, aData] = await Promise.all([sRes.json(), aRes.json()]);
+    console.log('[Attendance] Loading students for:', { 
+      branch: user?.branch, 
+      class: teacherClass, 
+      section: teacherSection 
+    });
 
-    if (sData.success) setStudents(sData.data);
-    if (aData.success) {
-      const map = {};
-      aData.data.forEach(a => { map[String(a.entityId)] = a.status; });
-      setAttMap(map);
+    try {
+      const [sRes, aRes] = await Promise.all([
+        fetch(`/api/students?${params}`),
+        fetch(`/api/attendance?entityType=student&date=${date}&branch=${user?.branch||''}&class=${teacherClass}&section=${teacherSection}`),
+      ]);
+      const [sData, aData] = await Promise.all([sRes.json(), aRes.json()]);
+
+      if (sData.success) {
+        console.log('[Attendance] Loaded students:', sData.data.length);
+        setStudents(sData.data);
+      }
+      if (aData.success) {
+        const map = {};
+        aData.data.forEach(a => { map[String(a.entityId)] = a.status; });
+        setAttMap(map);
+      }
+    } catch (err) {
+      console.error('[Attendance] Load error:', err);
     }
     setLoading(false);
   };
 
-  useEffect(() => { if (user) load(); }, [user, cls, section, date]);
+  useEffect(() => { 
+    if (user && (teacherClass || teacherSection)) {
+      load(); 
+    }
+  }, [user, teacherClass, teacherSection, date]);
 
   const loadMonthly = async (studentId) => {
     setLoadingMonthly(true);
@@ -66,16 +94,16 @@ export default function TeacherAttendancePage() {
     s.totalWorkingDays ? Math.round(s.presentDays / s.totalWorkingDays * 100) : 0;
 
   const presentCount = Object.values(attMap).filter(v => v === 'Present').length;
-  const absentCount  = students.length - presentCount;
-  const attPct       = students.length ? Math.round(presentCount / students.length * 100) : 0;
+  const absentCount = students.length - presentCount;
+  const attPct = students.length ? Math.round(presentCount / students.length * 100) : 0;
 
   const exportPDF = () => {
     setExporting(true);
     const rows = filtered.map((s, i) => {
       const status = attMap[String(s._id)] || 'N/A';
-      const pct    = getStudentAttPct(s);
+      const pct = getStudentAttPct(s);
       const statusColor = status === 'Present' ? '#16a34a' : status === 'Absent' ? '#dc2626' : '#94a3b8';
-      const pctColor    = pct >= 75 ? '#16a34a' : '#f59e0b';
+      const pctColor = pct >= 75 ? '#16a34a' : '#f59e0b';
       return `
         <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'}">
           <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#94a3b8">${i + 1}</td>
@@ -93,7 +121,7 @@ export default function TeacherAttendancePage() {
 
     const html = `
       <!DOCTYPE html><html><head><meta charset="UTF-8">
-      <title>Attendance Report — ${cls} ${section} — ${date}</title>
+      <title>Attendance Report — ${teacherClass} ${teacherSection} — ${date}</title>
       <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: 'Segoe UI', Arial, sans-serif; background:#fff; color:#1e293b; padding:32px; }
@@ -120,7 +148,7 @@ export default function TeacherAttendancePage() {
         <div class="top-bar">
           <div>
             <div class="school-name">📚 SchoolERP — Attendance Report</div>
-            <div class="report-title">${user?.branch} &nbsp;•&nbsp; ${cls} — Section ${section} &nbsp;•&nbsp; Date: ${date}</div>
+            <div class="report-title">${user?.branch} &nbsp;•&nbsp; ${teacherClass} — Section ${teacherSection} &nbsp;•&nbsp; Date: ${date}</div>
           </div>
           <div class="top-right">
             <div>Teacher: <b>${user?.name}</b></div>
@@ -155,7 +183,7 @@ export default function TeacherAttendancePage() {
           <tbody>${rows}</tbody>
         </table>
         <div class="footer">
-          <span>SchoolERP &nbsp;•&nbsp; ${user?.branch} &nbsp;•&nbsp; ${cls} — Section ${section}</span>
+          <span>SchoolERP &nbsp;•&nbsp; ${user?.branch} &nbsp;•&nbsp; ${teacherClass} — Section ${teacherSection}</span>
           <span>Total Records: ${filtered.length} &nbsp;•&nbsp; Printed on ${new Date().toLocaleString('en-IN')}</span>
         </div>
       </body></html>`;
@@ -166,9 +194,34 @@ export default function TeacherAttendancePage() {
     setTimeout(() => { win.print(); setExporting(false); }, 500);
   };
 
+  // ✅ Show message if teacher has no assigned class
+  if (!loading && (!teacherClass || !teacherSection)) {
+    return (
+      <AppLayout requiredRole="teacher-admin">
+        <PageHeader title="Attendance" subtitle="View and manage student attendance" />
+        <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ width: 64, height: 64, background: '#fee2e2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <Lock size={28} color="#ef4444" />
+          </div>
+          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>
+            No Class Assigned
+          </h3>
+          <p style={{ color: '#64748b', fontSize: '0.875rem', maxWidth: 400, margin: '0 auto' }}>
+            You are not assigned as a class teacher yet. Please contact your branch administrator to assign you a class.
+          </p>
+          <div style={{ marginTop: 16, padding: '12px 20px', background: '#f8fafc', borderRadius: 10, display: 'inline-block' }}>
+            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Your Account</div>
+            <div style={{ fontWeight: 600, color: '#1e293b', marginTop: 4 }}>{user?.name}</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{user?.branch}</div>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout requiredRole="teacher-admin">
-      <PageHeader title="Attendance" subtitle="View and manage student attendance">
+      <PageHeader title="Attendance" subtitle={`${teacherClass} — Section ${teacherSection}`}>
         <button
           className="btn btn-primary"
           onClick={exportPDF}
@@ -182,13 +235,34 @@ export default function TeacherAttendancePage() {
         </button>
       </PageHeader>
 
+      {/* ── Class Info Banner ─────────────────────────────── */}
+      <div style={{ 
+        background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', 
+        borderRadius: 12, 
+        padding: '14px 20px', 
+        marginBottom: 16,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        color: 'white'
+      }}>
+        <div>
+          <div style={{ fontSize: '0.75rem', opacity: 0.85 }}>Class Teacher For</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{teacherClass} — Section {teacherSection}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '0.75rem', opacity: 0.85 }}>{user?.branch}</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{user?.name}</div>
+        </div>
+      </div>
+
       {/* ── Summary Cards ─────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
         {[
           { l: 'Total Students', v: students.length, c: '#4f46e5' },
-          { l: 'Present Today',  v: presentCount,    c: '#10b981' },
-          { l: 'Absent Today',   v: absentCount,     c: '#ef4444' },
-          { l: 'Attendance %',   v: `${attPct}%`,    c: '#f59e0b' },
+          { l: 'Present Today', v: presentCount, c: '#10b981' },
+          { l: 'Absent Today', v: absentCount, c: '#ef4444' },
+          { l: 'Attendance %', v: `${attPct}%`, c: '#f59e0b' },
         ].map(({ l, v, c }) => (
           <div key={l} className="card" style={{ textAlign: 'center', borderTop: `3px solid ${c}`, padding: 14 }}>
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: c }}>{v}</div>
@@ -197,23 +271,14 @@ export default function TeacherAttendancePage() {
         ))}
       </div>
 
-      {/* ── Filters ───────────────────────────────────────── */}
+      {/* ── Filters (Date and Search only - no class/section) ───────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select className="select" value={cls} onChange={e => { setCls(e.target.value); setPage(1); }}>
-            <option value="">All Classes</option>
-            {['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'].map(c => <option key={c}>{c}</option>)}
-          </select>
-          <select className="select" value={section} onChange={e => { setSection(e.target.value); setPage(1); }}>
-            <option value="">All Sections</option>
-            {['A','B','C','D'].map(s => <option key={s}>{s}</option>)}
-          </select>
           <input
             className="input" type="date" value={date} max={today}
             onChange={e => setDate(e.target.value)}
             style={{ maxWidth: 160 }}
           />
-          {/* ✅ Upgraded search box */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, maxWidth: 260, background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '7px 12px' }}>
             <Search size={14} color="#94a3b8" />
             <input
@@ -247,20 +312,24 @@ export default function TeacherAttendancePage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ textAlign: 'center', padding: 52 }}>
-                <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
-                <span style={{ color: '#94a3b8', fontSize: '0.83rem' }}>Loading students...</span>
-              </td></tr>
+              <tr key="loading-row">
+                <td colSpan={9} style={{ textAlign: 'center', padding: 52 }}>
+                  <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
+                  <span style={{ color: '#94a3b8', fontSize: '0.83rem' }}>Loading students...</span>
+                </td>
+              </tr>
             ) : paginated.length === 0 ? (
-              <tr><td colSpan={9}><EmptyState message="No students found" /></td></tr>
+              <tr key="empty-row">
+                <td colSpan={9}><EmptyState message="No students found" /></td>
+              </tr>
             ) : paginated.map((s, i) => {
-              const todayStatus = attMap[String(s._id)] || 'N/A';
+              const todayStatus = attMap[String(s._id)] || attMap[String(s.id)] || 'N/A';
               const pct = getStudentAttPct(s);
               return (
-                <tr key={s._id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                <tr key={s._id || s.id || `student-${i}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{(page - 1) * perPage + i + 1}</td>
                   <td style={{ fontWeight: 700, color: '#4f46e5', fontSize: '0.83rem' }}>{s.rollNo}</td>
-                  <td><Badge>{s.status}</Badge></td>
+                  <td><Badge>{s.status || 'Active'}</Badge></td>
                   <td>
                     <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{s.name}</div>
                     <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>{s.gender}</div>
@@ -270,7 +339,7 @@ export default function TeacherAttendancePage() {
                     <span style={{
                       padding: '3px 10px', borderRadius: 20, fontSize: '0.73rem', fontWeight: 700,
                       background: todayStatus === 'Present' ? '#dcfce7' : todayStatus === 'Absent' ? '#fee2e2' : '#f1f5f9',
-                      color:      todayStatus === 'Present' ? '#16a34a' : todayStatus === 'Absent' ? '#dc2626' : '#94a3b8',
+                      color: todayStatus === 'Present' ? '#16a34a' : todayStatus === 'Absent' ? '#dc2626' : '#94a3b8',
                     }}>
                       {todayStatus}
                     </span>
@@ -285,7 +354,7 @@ export default function TeacherAttendancePage() {
                   </td>
                   <td>
                     <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 4 }}
-                      onClick={async () => { setViewStudent({ ...s, showMonthly: true }); await loadMonthly(s._id); }}>
+                      onClick={async () => { setViewStudent({ ...s, showMonthly: true }); await loadMonthly(s._id || s.id); }}>
                       <Calendar size={11} /> Monthly
                     </button>
                   </td>
@@ -306,7 +375,6 @@ export default function TeacherAttendancePage() {
       {/* ── Student Detail Modal ──────────────────────────── */}
       {viewStudent && !viewStudent.showMonthly && (
         <Modal open onClose={() => setViewStudent(null)} title={viewStudent.name} size="md">
-          {/* Student identity strip */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'linear-gradient(135deg,#eff6ff,#e0f2fe)', borderRadius: 10, padding: '14px 16px', marginBottom: 18 }}>
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '1.2rem', flexShrink: 0 }}>
               {viewStudent.name?.charAt(0)}
@@ -318,18 +386,17 @@ export default function TeacherAttendancePage() {
             <span style={{
               marginLeft: 'auto', padding: '4px 12px', borderRadius: 20, fontSize: '0.73rem', fontWeight: 700,
               background: attMap[String(viewStudent._id)] === 'Present' ? '#dcfce7' : '#fee2e2',
-              color:      attMap[String(viewStudent._id)] === 'Present' ? '#16a34a' : '#dc2626',
+              color: attMap[String(viewStudent._id)] === 'Present' ? '#16a34a' : '#dc2626',
             }}>
               {attMap[String(viewStudent._id)] || 'N/A'}
             </span>
           </div>
 
-          {/* Attendance stat cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
             {[
-              { l: 'Present Days', v: viewStudent.presentDays || 0,                                             c: '#10b981' },
-              { l: 'Absent Days',  v: (viewStudent.totalWorkingDays || 0) - (viewStudent.presentDays || 0),     c: '#ef4444' },
-              { l: 'Attendance %', v: `${getStudentAttPct(viewStudent)}%`,                                      c: '#4f46e5' },
+              { l: 'Present Days', v: viewStudent.presentDays || 0, c: '#10b981' },
+              { l: 'Absent Days', v: (viewStudent.totalWorkingDays || 0) - (viewStudent.presentDays || 0), c: '#ef4444' },
+              { l: 'Attendance %', v: `${getStudentAttPct(viewStudent)}%`, c: '#4f46e5' },
             ].map(({ l, v, c }) => (
               <div key={l} style={{ background: `${c}12`, borderRadius: 10, padding: 14, textAlign: 'center', borderTop: `3px solid ${c}` }}>
                 <div style={{ fontSize: '1.25rem', fontWeight: 800, color: c }}>{v}</div>
@@ -338,15 +405,14 @@ export default function TeacherAttendancePage() {
             ))}
           </div>
 
-          {/* Remaining info grid — same fields as original */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
             {[
-              ['Total Days',   viewStudent.totalWorkingDays || 220],
-              ['Today',        attMap[String(viewStudent._id)] || 'N/A'],
-              ['Parent',       viewStudent.parentName],
-              ['Phone',        viewStudent.phone],
-              ['Total Fee',    `₹${(viewStudent.totalFee||0).toLocaleString()}`],
-              ['Due Fee',      `₹${((viewStudent.totalFee||0)-(viewStudent.paidFee||0)).toLocaleString()}`],
+              ['Total Days', viewStudent.totalWorkingDays || 220],
+              ['Today', attMap[String(viewStudent._id)] || 'N/A'],
+              ['Parent', viewStudent.parentName],
+              ['Phone', viewStudent.phone],
+              ['Total Fee', `₹${(viewStudent.totalFee || 0).toLocaleString()}`],
+              ['Due Fee', `₹${((viewStudent.totalFee || 0) - (viewStudent.paidFee || 0)).toLocaleString()}`],
             ].map(([l, v]) => (
               <div key={l} style={{ padding: '8px 0', borderBottom: '1px solid #f8fafc' }}>
                 <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>{l}</div>
@@ -388,21 +454,19 @@ export default function TeacherAttendancePage() {
             </div>
           ) : (
             <>
-              {/* Day headers */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 5, marginBottom: 6 }}>
-                {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
                   <div key={d} style={{ textAlign: 'center', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, paddingBottom: 3 }}>{d}</div>
                 ))}
               </div>
-              {/* Calendar cells */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 5 }}>
-                {monthlyAtt.map(a => (
-                  <div key={a._id} style={{
+                {monthlyAtt.map((a, idx) => (
+                  <div key={a._id || `att-${idx}`} style={{
                     textAlign: 'center', padding: '8px 4px', borderRadius: 8,
                     background: a.status === 'Present' ? '#dcfce7' : '#fee2e2',
                     border: `1px solid ${a.status === 'Present' ? '#bbf7d0' : '#fecaca'}`,
                   }}>
-                    <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{a.date.slice(8)}</div>
+                    <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{a.date?.slice(8)}</div>
                     <div style={{ fontSize: '0.7rem', fontWeight: 800, color: a.status === 'Present' ? '#16a34a' : '#dc2626', marginTop: 2 }}>
                       {a.status === 'Present' ? 'P' : 'A'}
                     </div>
@@ -417,6 +481,10 @@ export default function TeacherAttendancePage() {
           </div>
         </Modal>
       )}
+
+      <style jsx global>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </AppLayout>
   );
 }

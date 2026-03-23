@@ -1,0 +1,4 @@
+name,rollNo,class,section,gender,parentName,phone,email,totalFee,bloodGroup,caste,aadhaar,yearOfJoining,academicYear,username,password
+Ravi Kumar,2025001,Class 5,A,Male,Suresh Kumar,9876543210,parent@email.com,25000,O+,OC,123456789012,2025,2025-26,student.2025001,Student@123
+Priya Singh,2025002,Class 5,A,Female,Ramesh Singh,9876543211,ramesh@email.com,25000,B+,BC,123456789013,2025,2025-26,student.2025002,Student@123
+Amit Patel,2025003,Class 5,B,Male,Vijay Patel,9876543212,vijay@email.com,25000,A+,OC,123456789014,2025,2025-26,student.2025003,Student@123

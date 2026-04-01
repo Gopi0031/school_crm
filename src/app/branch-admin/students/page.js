@@ -5,12 +5,17 @@ import { PageHeader, Badge, TableWrapper, Pagination, EmptyState, Modal, FormFie
 import { useAuth } from '@/context/AuthContext';
 import { Eye, Plus, Trash2, Edit2, Search, Printer, FileDown, Upload, ClipboardList, X } from 'lucide-react';
 
+// In your BLANK state for the student form:
 const BLANK = {
-  name:'', rollNo:'', class:'', section:'', gender:'Male', bloodGroup:'',
-  caste:'', aadhaar:'', address:'', parentName:'', phone:'', email:'',
-  academicYear:'2025-26', yearOfJoining:'', dateOfJoining:'', totalFee:'',
-  username:'', password:'', confirmPassword:'',
+  name: '', rollNo: '', class: '', section: '',
+  gender: '', parentName: '', phone: '', email: '',
+  bloodGroup: '', caste: '', aadhaar: '', address: '',
+  totalFee: '',   // ✅ make sure this exists
+  academicYear: '2025-26',
+  yearOfJoining: '', dateOfJoining: '',
+  username: '', password: '', confirmPassword: '',
 };
+
 
 const CLASSES  = ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
 const SECTIONS = ['A','B','C','D','E'];
@@ -481,9 +486,15 @@ export default function BranchAdminStudents() {
               placeholder="parent@email.com" />
           </F>
           <F label="Total Fee (₹)">
-            <input className="input" type="number" value={form.totalFee}
-              onChange={e => setForm(p => ({ ...p, totalFee: e.target.value }))} />
-          </F>
+  <input
+    className="input"
+    type="number"
+    value={form.totalFee}
+    onChange={e => setForm(p => ({ ...p, totalFee: e.target.value }))}
+    placeholder="e.g. 40000"
+  />
+</F>
+
           <F label="Year of Joining">
             <input className="input" value={form.yearOfJoining}
               onChange={e => setForm(p => ({ ...p, yearOfJoining: e.target.value }))}

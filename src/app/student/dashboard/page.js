@@ -159,7 +159,7 @@ export default function StudentDashboard() {
             {upcoming.length === 0 ? (
               <div style={{ color: '#94a3b8', fontSize: '0.8rem', textAlign: 'center', padding: '30px 0' }}>🎉 No upcoming events</div>
             ) : upcoming.map((ev, i) => (
-              <div key={ev._id} style={{
+             <div key={ev.id ?? `ev-${i}`} style={{
                 padding: '10px 0', borderBottom: i < upcoming.length - 1 ? '1px solid #f1f5f9' : 'none',
                 animation: 'fadeSlideUp 0.4s ease both', animationDelay: `${300 + i * 60}ms`,
               }}>

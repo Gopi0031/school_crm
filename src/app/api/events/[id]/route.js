@@ -1,16 +1,10 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { deleteImage } from '@/lib/cloudinary';
 
 export async function GET(req, { params }) {
   try {
-    const { id } = await params;
-    const event = await prisma.event.findUnique({ where: { id } });
-
-    if (!event) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    }
-
+    const event = await prisma.event.findUnique({ where: { id: params.id } });
+    if (!event) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json({ success: true, data: event });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -19,69 +13,45 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   try {
-    const { id } = await params;
     const body = await req.json();
 
-    // Get existing event to check for image changes
-    const existing = await prisma.event.findUnique({ where: { id } });
+    const data = {};
 
-    // If poster is being replaced, delete old one from Cloudinary
-    if (body.posterPublicId !== undefined && 
-        existing?.posterPublicId && 
-        existing.posterPublicId !== body.posterPublicId) {
-      try {
-        await deleteImage(existing.posterPublicId);
-      } catch (e) {
-        console.error('Failed to delete old image:', e);
-      }
+    const allowed = [
+      'name','date','startTime','endTime','description','branch','class','section',
+      'academicYear','eventType','visibility','posterImage','posterPublicId','images',
+      'isPublished','isDraft','isPinned','venue','requiresRegistration',
+      'maxParticipants','createdBy','createdByName',
+    ];
+
+    for (const key of allowed) {
+      if (body[key] !== undefined) data[key] = body[key];
+    }
+
+    // registrationDeadline: only set if non-empty
+    if (body.registrationDeadline !== undefined) {
+      data.registrationDeadline = body.registrationDeadline?.trim() !== ''
+        ? body.registrationDeadline
+        : '';
     }
 
     const event = await prisma.event.update({
-      where: { id },
-      data: body,
+      where: { id: params.id },
+      data,
     });
 
     return NextResponse.json({ success: true, data: event });
   } catch (err) {
+    console.error('PUT /api/events/[id] error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
 export async function DELETE(req, { params }) {
   try {
-    const { id } = await params;
-
-    // Get event to delete associated images
-    const event = await prisma.event.findUnique({ where: { id } });
-
-    if (event) {
-      // Delete poster from Cloudinary
-      if (event.posterPublicId) {
-        try {
-          await deleteImage(event.posterPublicId);
-        } catch (e) {
-          console.error('Failed to delete poster:', e);
-        }
-      }
-
-      // Delete gallery images from Cloudinary
-      if (event.images && Array.isArray(event.images)) {
-        for (const img of event.images) {
-          if (img.publicId) {
-            try {
-              await deleteImage(img.publicId);
-            } catch (e) {
-              console.error('Failed to delete gallery image:', e);
-            }
-          }
-        }
-      }
-    }
-
-    await prisma.event.delete({ where: { id } });
-
-    return NextResponse.json({ success: true, message: 'Deleted' });
+    await prisma.event.delete({ where: { id: params.id } });
+    return NextResponse.json({ success: true });
   } catch (err) {
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

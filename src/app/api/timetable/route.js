@@ -14,6 +14,7 @@ export async function GET(req) {
     const tt = await prisma.timetable.findFirst({
       where: { branch, class: cls, section },
     });
+
     return NextResponse.json({ success: true, data: tt || null });
   } catch (err) {
     console.error('[GET /api/timetable]', err.message);
@@ -26,18 +27,15 @@ export async function POST(req) {
     const body = await req.json();
     const { branch, class: cls, section, days, updatedBy } = body;
 
-    console.log('[POST /api/timetable] branch:', branch, '| class:', cls, '| section:', section);
-
     if (!branch || !cls || !section)
       return NextResponse.json({ success: false, message: 'branch, class, section are required' }, { status: 400 });
 
     const tt = await prisma.timetable.upsert({
       where:  { branch_class_section: { branch, class: cls, section } },
-      update: { days: days ?? [], updatedBy: updatedBy || '' },
-      create: { branch, class: cls, section, days: days ?? [], updatedBy: updatedBy || '' },
+      update: { days, updatedBy: updatedBy || '' },
+      create: { branch, class: cls, section, days, updatedBy: updatedBy || '' },
     });
 
-    console.log('[POST /api/timetable] saved id:', tt.id);
     return NextResponse.json({ success: true, data: tt });
   } catch (err) {
     console.error('[POST /api/timetable]', err.message);

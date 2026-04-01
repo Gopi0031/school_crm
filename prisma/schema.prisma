@@ -9,23 +9,24 @@ datasource db {
 
 // ─── USER ───────────────────────────────────────────────
 model User {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  username     String   @unique
-  password     String
-  role         String
-  name         String
-  email        String   @default("")
-  phone        String   @default("")
-  branch       String   @default("")
-  branchId     String   @default("")
-  class        String   @default("")
-  section      String   @default("")
-  rollNo       String   @default("")
-  studentId    String   @default("")
-  profileImage String   @default("")
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  username      String   @unique
+  password      String
+  role          String
+  name          String?
+  email         String?  @default("")
+  phone         String?  @default("")
+  branch        String?  @default("")
+  branchId      String?  @default("")
+  teacherId     String?  @db.ObjectId
+  studentId     String?  @db.ObjectId   // ✅ added
+  employeeId    String?
+  class         String?
+  section       String?
+  rollNo        String?
+  assignedClass String?  @default("")   // ✅ added
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
 }
 
 // ─── BRANCH ─────────────────────────────────────────────
@@ -61,6 +62,9 @@ model Student {
   term1                Float    @default(0)
   term2                Float    @default(0)
   term3                Float    @default(0)
+  term1Due             Float    @default(0)
+  term2Due             Float    @default(0)
+  term3Due             Float    @default(0)
   academicYear         String   @default("")
   yearOfJoining        String   @default("")
   dateOfJoining        String   @default("")
@@ -83,37 +87,33 @@ model Student {
 
 // ─── TEACHER ─────────────────────────────────────────────
 model Teacher {
-  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
-  name                 String
-  employeeId           String   @default("")
-  phone                String   @default("")
-  email                String   @default("")
-  gender               String   @default("")
-  dob                  String   @default("")
-  address              String   @default("")
-  qualification        String   @default("")
-  experience           String   @default("")
-  subject              String   @default("")
-  class                String   @default("")
-  section              String   @default("")
-  branch               String   @default("")
-  branchId             String   @default("")
-  salary               Float    @default(0)
-  profileImage         String   @default("")
-  profileImagePublicId String   @default("")
-  status               String   @default("Active")
-  userId               String   @default("")
-  joinDate             String   @default("")
-  joinYear             String   @default("")
-  aadhaar              String   @default("")
-  pan                  String   @default("")
-  assignedClass        String   @default("")
-  classTeacher         Boolean  @default(false)
-  presentDays          Int      @default(0)
-  absentDays           Int      @default(0)
-  totalDays            Int      @default(0)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  employeeId    String?  @unique
+  phone         String?
+  email         String?
+  qualification String?
+  experience    String?
+  subject       String?
+  class         String?
+  section       String?
+  joinYear      String?
+  salary        Float    @default(0)
+  aadhaar       String?
+  pan           String?
+  branch        String?
+  branchId      String?
+  username      String?  @unique
+  userId        String?
+  status        String   @default("Active")
+  classTeacher  Boolean  @default(false)
+  assignedClass String?  @default("")
+  presentDays   Int      @default(0)
+  absentDays    Int      @default(0)
+  totalDays     Int      @default(0)
+  academicYear  String?  @default("2025-26")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // ─── STAFF ───────────────────────────────────────────────
@@ -132,6 +132,8 @@ model Staff {
   branch               String   @default("")
   branchId             String   @default("")
   presentDays          Int      @default(0)
+  absentDays           Int      @default(0)   // ✅ added
+  totalDays            Int      @default(0)   // ✅ added
   aadhaar              String   @default("")
   pan                  String   @default("")
   status               String   @default("Active")
@@ -183,70 +185,52 @@ model Report {
   @@unique([studentId, subject, exam], name: "studentId_subject_exam")
 }
 
-// ─── EVENT (UPDATED WITH IMAGE POSTS) ────────────────────
+// ─── EVENT ───────────────────────────────────────────────
 model Event {
-  id               String   @id @default(auto()) @map("_id") @db.ObjectId
-  name             String
-  date             String
-  startTime        String   @default("")
-  endTime          String   @default("")
-  description      String   @default("")
-  branch           String   @default("All")
-  class            String   @default("All")
-  section          String   @default("All")
-  academicYear     String   @default("2024-25")
-  
-  // NEW: Event Type & Category
-  eventType        String   @default("General") // General, Academic, Sports, Cultural, Holiday, Exam, Meeting, Competition
-  
-  // NEW: Visibility Control - who can see this event
-  visibility       String[] @default(["All"]) // All, Teachers, Students, Parents, Branch Admins
-  
-  // NEW: Poster Image Support
-  posterImage      String?  // Cloudinary URL
-  posterPublicId   String?  // Cloudinary public ID for deletion
-  
-  // NEW: Additional Images (gallery)
-  images           Json     @default("[]") // Array of {url, publicId, caption}
-  
-  // NEW: Publishing & Status
-  isPublished      Boolean  @default(true)
-  isDraft          Boolean  @default(false)
-  isPinned         Boolean  @default(false) // Pin to top
-  
-  // NEW: Notification tracking
-  notificationSent Boolean  @default(false)
-  notifiedAt       DateTime?
-  
-  // NEW: Location/Venue
-  venue            String   @default("")
-  
-  // NEW: Registration (for events requiring signup)
-  requiresRegistration Boolean @default(false)
-  maxParticipants      Int     @default(0)
-  registeredCount      Int     @default(0)
-  registrationDeadline String  @default("")
-  
-  // Audit fields
-  createdBy        String   @default("")
-  createdByName    String   @default("")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  name                 String
+  date                 String
+  startTime            String    @default("")
+  endTime              String    @default("")
+  description          String    @default("")
+  branch               String    @default("All")
+  class                String    @default("All")
+  section              String    @default("All")
+  academicYear         String    @default("2024-25")
+  eventType            String    @default("General")
+  visibility           String[]  @default(["All"])
+  posterImage          String?
+  posterPublicId       String?
+  images               Json      @default("[]")
+  isPublished          Boolean   @default(true)
+  isDraft              Boolean   @default(false)
+  isPinned             Boolean   @default(false)
+  notificationSent     Boolean   @default(false)
+  notifiedAt           DateTime?
+  venue                String    @default("")
+  requiresRegistration Boolean   @default(false)
+  maxParticipants      Int       @default(0)
+  registeredCount      Int       @default(0)
+  registrationDeadline String    @default("")
+  createdBy            String    @default("")
+  createdByName        String    @default("")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
 
-// ─── EVENT REGISTRATION (NEW) ────────────────────────────
+// ─── EVENT REGISTRATION ───────────────────────────────────
 model EventRegistration {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  eventId     String   @db.ObjectId
-  userId      String   @db.ObjectId
-  userName    String   @default("")
-  userRole    String   @default("") // student, teacher, parent
-  userClass   String   @default("")
-  userSection String   @default("")
-  branch      String   @default("")
-  status      String   @default("registered") // registered, attended, cancelled
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId      String   @db.ObjectId
+  userId       String   @db.ObjectId
+  userName     String   @default("")
+  userRole     String   @default("")
+  userClass    String   @default("")
+  userSection  String   @default("")
+  branch       String   @default("")
+  status       String   @default("registered")
   registeredAt DateTime @default(now())
-  
+
   @@unique([eventId, userId], name: "eventId_userId")
 }
 
@@ -290,46 +274,36 @@ model Timetable {
   @@unique([branch, class, section], name: "branch_class_section")
 }
 
-// ─── NOTIFICATION (NEW) ──────────────────────────────────
+// ─── NOTIFICATION ────────────────────────────────────────
 model Notification {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  title       String
-  message     String
-  type        String   @default("general") // event, announcement, alert, reminder
-  priority    String   @default("normal") // low, normal, high, urgent
-  
-  // Target audience
-  targetRole  String[] @default(["All"]) // All, student, teacher, parent, branch-admin
-  targetBranch String  @default("All")
-  targetClass  String  @default("All")
-  targetSection String @default("All")
-  
-  // Related entity
-  relatedType String   @default("") // event, holiday, exam, etc.
-  relatedId   String   @default("")
-  
-  // Image/attachment
-  image       String   @default("")
-  link        String   @default("")
-  
-  // Status
-  isActive    Boolean  @default(true)
-  expiresAt   DateTime?
-  
-  // Audit
-  createdBy   String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  message       String
+  type          String    @default("general")
+  priority      String    @default("normal")
+  targetRole    String[]  @default(["All"])
+  targetBranch  String    @default("All")
+  targetClass   String    @default("All")
+  targetSection String    @default("All")
+  relatedType   String    @default("")
+  relatedId     String    @default("")
+  image         String    @default("")
+  link          String    @default("")
+  isActive      Boolean   @default(true)
+  expiresAt     DateTime?
+  createdBy     String    @default("")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
-// ─── USER NOTIFICATION STATUS (NEW) ──────────────────────
+// ─── USER NOTIFICATION STATUS ────────────────────────────
 model UserNotification {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String   @db.ObjectId
-  notificationId String   @db.ObjectId
-  isRead         Boolean  @default(false)
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String    @db.ObjectId
+  notificationId String    @db.ObjectId
+  isRead         Boolean   @default(false)
   readAt         DateTime?
-  createdAt      DateTime @default(now())
-  
+  createdAt      DateTime  @default(now())
+
   @@unique([userId, notificationId], name: "userId_notificationId")
 }

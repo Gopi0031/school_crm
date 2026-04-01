@@ -1,40 +1,54 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Staff from '@/models/Staff';
+import prisma from '@/lib/prisma';
 import { deleteImage } from '@/lib/cloudinary';
 
 export async function GET(req, { params }) {
   try {
-    await connectDB();
-    const staff = await Staff.findById(params.id);
+    const { id } = await params;
+    const staff = await prisma.staff.findUnique({ where: { id } });
     if (!staff) return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
     return NextResponse.json({ success: true, data: staff });
   } catch (err) {
+    console.error('[GET /api/staff/[id]]', err);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
 
 export async function PUT(req, { params }) {
   try {
-    await connectDB();
+    const { id } = await params;
     const body = await req.json();
-    const staff = await Staff.findByIdAndUpdate(params.id, body, { new: true, runValidators: true });
-    if (!staff) return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
+
+    // Strip fields that shouldn't be updated directly
+    const { id: _id, createdAt, updatedAt, ...updateData } = body;
+
+    const staff = await prisma.staff.update({
+      where: { id },
+      data:  updateData,
+    });
+
     return NextResponse.json({ success: true, data: staff });
   } catch (err) {
+    console.error('[PUT /api/staff/[id]]', err);
+    if (err.code === 'P2025')
+      return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
   }
 }
 
 export async function DELETE(req, { params }) {
   try {
-    await connectDB();
-    const staff = await Staff.findById(params.id);
+    const { id } = await params;
+    const staff = await prisma.staff.findUnique({ where: { id } });
     if (!staff) return NextResponse.json({ error: 'Staff not found' }, { status: 404 });
+
     if (staff.profileImagePublicId) await deleteImage(staff.profileImagePublicId);
-    await staff.deleteOne();
+
+    await prisma.staff.delete({ where: { id } });
+
     return NextResponse.json({ success: true, message: 'Staff deleted' });
   } catch (err) {
+    console.error('[DELETE /api/staff/[id]]', err);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

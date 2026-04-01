@@ -6,10 +6,17 @@ import { verifyOtp } from '@/lib/otpStore';
 export async function GET(req, { params }) {
   try {
     const { id } = await params;
-    const user = await prisma.user.findUnique({ where: { id } });
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true, username: true, role: true, name: true,
+        email: true, phone: true, branch: true, branchId: true,
+        employeeId: true, class: true, section: true,
+        rollNo: true, isActive: true, createdAt: true,
+      },
+    });
     if (!user) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    const { password: _, ...safe } = user;
-    return NextResponse.json({ success: true, data: safe });
+    return NextResponse.json({ success: true, data: user });
   } catch (err) {
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
@@ -18,47 +25,42 @@ export async function GET(req, { params }) {
 export async function PUT(req, { params }) {
   try {
     const { id } = await params;
-    if (!id || id === 'undefined')
-      return NextResponse.json({ success: false, message: 'Invalid user ID' }, { status: 400 });
-
     const body = await req.json();
-    console.log('[PUT /api/users] id:', id, '| fields:', Object.keys(body));
 
-    // ── Password change ──
+    // Password change
     if (body.password) {
+      // Super-admin requires OTP
       if (body.otp && body.email) {
         const result = verifyOtp(body.email.toLowerCase().trim(), body.otp);
         if (!result.valid)
           return NextResponse.json({ success: false, message: result.reason }, { status: 400 });
       }
-
       const hashed = await bcrypt.hash(body.password, 12);
       await prisma.user.update({ where: { id }, data: { password: hashed } });
 
       // Verify it saved
-      const check = await prisma.user.findUnique({ where: { id } });
+      const check    = await prisma.user.findUnique({ where: { id } });
       const verified = await bcrypt.compare(body.password, check.password);
-      console.log('[PUT /api/users] password save verified:', verified);
-
       if (!verified)
         return NextResponse.json({ success: false, message: 'Password save failed' }, { status: 500 });
 
       return NextResponse.json({ success: true, message: 'Password updated successfully' });
     }
 
-    // ── Other fields ──
-    const { password, otp, ...safeFields } = body;
+    // Other fields
+    const { password, otp, id: _id, createdAt, ...safeFields } = body;
     const updated = await prisma.user.update({
       where: { id },
       data:  safeFields,
+      select: {
+        id: true, username: true, role: true, name: true,
+        email: true, phone: true, branch: true, isActive: true,
+      },
     });
-    if (!updated)
-      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
 
-    const { password: _, ...safe } = updated;
-    return NextResponse.json({ success: true, data: safe });
+    return NextResponse.json({ success: true, data: updated });
   } catch (err) {
-    console.error('[PUT /api/users]', err.message);
+    console.error('[PUT /api/users/[id]]', err.message);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }

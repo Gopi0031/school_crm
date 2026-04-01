@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Attendance from '@/models/Attendance';
+import prisma from '@/lib/prisma';
 
 export async function GET(req) {
   try {
-    await connectDB();
     const { searchParams } = new URL(req.url);
     const entityId = searchParams.get('entityId');
     const month    = searchParams.get('month'); // e.g. "2025-01"
@@ -12,16 +10,24 @@ export async function GET(req) {
 
     if (!entityId) return NextResponse.json({ error: 'entityId required' }, { status: 400 });
 
-    const query = { entityId };
+    let dateFilter = {};
     if (month) {
-      query.date = { $gte: `${month}-01`, $lte: `${month}-31` };
+      dateFilter = { gte: `${month}-01`, lte: `${month}-31` };
     } else if (year) {
-      query.date = { $gte: `${year}-01-01`, $lte: `${year}-12-31` };
+      dateFilter = { gte: `${year}-01-01`, lte: `${year}-12-31` };
     }
 
-    const records = await Attendance.find(query).sort({ date: 1 });
+    const records = await prisma.attendance.findMany({
+      where: {
+        entityId,
+        ...(Object.keys(dateFilter).length && { date: dateFilter }),
+      },
+      orderBy: { date: 'asc' },
+    });
+
     return NextResponse.json({ success: true, data: records });
   } catch (err) {
+    console.error('[GET /api/attendance/monthly]', err);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }

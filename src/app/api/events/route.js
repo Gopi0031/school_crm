@@ -4,66 +4,57 @@ import prisma from '@/lib/prisma';
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const branch = searchParams.get('branch');
-    const cls = searchParams.get('class');
+    const branch    = searchParams.get('branch');
+    const role      = searchParams.get('role');
+    const cls       = searchParams.get('class');
     const eventType = searchParams.get('eventType');
-    const visibility = searchParams.get('visibility');
     const published = searchParams.get('published');
-    const upcoming = searchParams.get('upcoming');
+    const upcoming  = searchParams.get('upcoming');
 
-    const where = {};
+    const AND = [];
 
-    // Branch filter
-    if (branch) {
-      where.OR = [{ branch }, { branch: 'All' }];
-    }
-
-    // Class filter
-    if (cls) {
-      where.AND = where.AND || [];
-      where.AND.push({
-        OR: [{ class: cls }, { class: 'All' }]
-      });
-    }
-
-    // Event type filter
-    if (eventType) {
-      where.eventType = eventType;
-    }
-
-    // Visibility filter (for role-based access)
-    if (visibility) {
-      where.AND = where.AND || [];
-      where.AND.push({
+    // ── Branch scoping ──────────────────────────────────────────────
+    // super-admin → all events (no filter)
+    // everyone else → own branch events + school-wide (branch = 'All')
+    if (role !== 'super-admin' && branch) {
+      AND.push({
         OR: [
-          { visibility: { has: visibility } },
-          { visibility: { has: 'All' } }
-        ]
+          { branch: branch },
+          { branch: 'All' },
+        ],
       });
     }
 
-    // Published filter
-    if (published === 'true') {
-      where.isPublished = true;
+    // Optional class filter
+    if (cls) {
+      AND.push({ OR: [{ class: cls }, { class: 'All' }] });
     }
 
-    // Upcoming events only
+    // Optional eventType filter
+    if (eventType) {
+      AND.push({ eventType });
+    }
+
+    // Only published events
+    if (published === 'true') {
+      AND.push({ isPublished: true });
+      AND.push({ isDraft: false });
+    }
+
+    // Only upcoming (today or future)
     if (upcoming === 'true') {
-      const today = new Date().toISOString().split('T')[0];
-      where.date = { gte: today };
+      const todayStr = new Date().toISOString().split('T')[0];
+      AND.push({ date: { gte: todayStr } });
     }
 
     const events = await prisma.event.findMany({
-      where,
-      orderBy: [
-        { isPinned: 'desc' },
-        { date: 'asc' }
-      ],
+      where: AND.length > 0 ? { AND } : {},
+      orderBy: [{ isPinned: 'desc' }, { date: 'asc' }],
     });
 
     return NextResponse.json({ success: true, data: events });
   } catch (err) {
-    console.error('GET events error:', err);
+    console.error('GET /api/events error:', err);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
@@ -72,37 +63,70 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    const event = await prisma.event.create({
-      data: {
-        name: body.name,
-        description: body.description || '',
-        date: body.date,
-        startTime: body.startTime || '',
-        endTime: body.endTime || '',
-        branch: body.branch || 'All',
-        class: body.class || 'All',
-        section: body.section || 'All',
-        academicYear: body.academicYear || '2024-25',
-        eventType: body.eventType || 'General',
-        visibility: body.visibility || ['All'],
-        posterImage: body.posterImage || null,
-        posterPublicId: body.posterPublicId || null,
-        images: body.images || [],
-        isPublished: body.isPublished ?? true,
-        isDraft: body.isDraft ?? false,
-        isPinned: body.isPinned ?? false,
-        venue: body.venue || '',
-        requiresRegistration: body.requiresRegistration ?? false,
-        maxParticipants: body.maxParticipants || 0,
-        registrationDeadline: body.registrationDeadline || '',
-        createdBy: body.createdBy || '',
-        createdByName: body.createdByName || '',
-      },
-    });
+    const {
+      name, date,
+      startTime        = '',
+      endTime          = '',
+      description      = '',
+      branch           = 'All',
+      class: cls       = 'All',
+      section          = 'All',
+      academicYear     = '2025-26',
+      eventType        = 'General',
+      visibility       = ['All'],
+      posterImage      = null,
+      posterPublicId   = null,
+      images           = [],
+      isPublished      = true,
+      isDraft          = false,
+      isPinned         = false,
+      venue            = '',
+      requiresRegistration = false,
+      maxParticipants  = 0,
+      createdBy        = '',
+      createdByName    = '',
+    } = body;
 
+    if (!name || !date) {
+      return NextResponse.json({ error: 'name and date are required' }, { status: 400 });
+    }
+
+    const data = {
+      name,
+      date,
+      startTime,
+      endTime,
+      description,
+      branch,
+      class: cls,
+      section,
+      academicYear,
+      eventType,
+      visibility,
+      images,
+      isPublished,
+      isDraft,
+      isPinned,
+      venue,
+      requiresRegistration,
+      maxParticipants,
+      createdBy,
+      createdByName,
+    };
+
+    // Only set optional nullable fields if provided
+    if (posterImage)    data.posterImage    = posterImage;
+    if (posterPublicId) data.posterPublicId = posterPublicId;
+
+    // registrationDeadline: only set if non-empty
+    if (body.registrationDeadline && body.registrationDeadline.trim() !== '') {
+      data.registrationDeadline = body.registrationDeadline;
+    }
+
+    const event = await prisma.event.create({ data });
     return NextResponse.json({ success: true, data: event }, { status: 201 });
   } catch (err) {
-    console.error('POST event error:', err);
+    console.error('POST /api/events error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

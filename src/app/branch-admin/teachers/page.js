@@ -12,8 +12,6 @@ const BLANK = {
   subject:'', aadhaar:'', pan:'', joinYear:'', salary:'',
   class:'', section:'', 
   status:'Active',  // ✅ Capital 'A'
-  classTeacher: false,
-  assignedClass: '',
   username:'', password:'', confirmPassword:'',
 };
 const CLASSES  = ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
@@ -113,11 +111,7 @@ export default function BranchAdminTeachers() {
   setError('');
   if (!form.name) { setError('Name is required'); return; }
   
-  // ✅ Validate class teacher fields
-  if (form.classTeacher && (!form.assignedClass || !form.section)) {
-    setError('Select both class and section for class teacher assignment');
-    return;
-  }
+ 
   
   if (!editTeacher) {
     // Creating new teacher - username and password required
@@ -340,18 +334,23 @@ const openEdit = (t) => {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
-              <tr><td colSpan={10} style={{ textAlign:'center', padding:48 }}>
-                <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTopColor:'#0891b2', borderRadius:'50%', animation:'spin 0.7s linear infinite', margin:'0 auto 10px' }} />
-                <span style={{ color:'#94a3b8', fontSize:'0.83rem' }}>Loading teachers...</span>
-              </td></tr>
-            ) : paginated.length === 0 ? (
-              <tr><td colSpan={10}><EmptyState message="No teachers found. Try adjusting filters." /></td></tr>
-            ) : paginated.map((t, i) => (
-              <tr key={t._id}>
-                <td style={{ color:'#94a3b8', fontSize:'0.78rem' }}>{(page-1)*perPage+i+1}</td>
-                <td><Badge>{t.status || 'Active'}</Badge></td>
-                <td style={{ fontWeight:700, color:'#4f46e5', fontSize:'0.8rem' }}>{t.employeeId}</td>
+           {loading ? (
+  <tr key="loading-row">
+    <td colSpan={10} style={{ textAlign:'center', padding:48 }}>
+      <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTopColor:'#0891b2', borderRadius:'50%', animation:'spin 0.7s linear infinite', margin:'0 auto 10px' }} />
+      <span style={{ color:'#94a3b8', fontSize:'0.83rem' }}>Loading teachers...</span>
+    </td>
+  </tr>
+) : paginated.length === 0 ? (
+  <tr key="empty-row">     {/* ✅ add key */}
+    <td colSpan={10}><EmptyState message="No teachers found. Try adjusting filters." /></td>
+  </tr>
+) : paginated.map((t, i) => (
+  <tr key={t.id || t._id || `row-${i}`}>   {/* ✅ use t.id since schema now uses ObjectId */}
+
+                  <td style={{ color:'#94a3b8', fontSize:'0.78rem' }}>{(page-1)*perPage+i+1}</td>
+                  <td><Badge>{t.status || 'Active'}</Badge></td>
+                  <td style={{ fontWeight:700, color:'#4f46e5', fontSize:'0.8rem' }}>{t.employeeId}</td>
                 <td>
                   <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.84rem' }}>{t.name}</div>
                   <div style={{ fontSize:'0.7rem', color:'#94a3b8' }}>{t.email}</div>
@@ -464,65 +463,7 @@ const openEdit = (t) => {
           {/* ── Login Credentials ── */}
         {/* After Status field, before Login Credentials section */}
 
-{/* ── Class Teacher Assignment ── */}
-<div style={{ gridColumn:'1/-1', borderTop:'1px solid #f1f5f9', paddingTop:12, marginTop:8 }}>
-  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
-    <input 
-      type="checkbox" 
-      id="classTeacher"
-      checked={form.classTeacher}
-      onChange={e => {
-        const checked = e.target.checked;
-        setForm(p => ({ 
-          ...p, 
-          classTeacher: checked,
-          // Auto-set assignedClass if class/section already selected
-          ...(checked && p.class && p.section ? { assignedClass: p.class } : {})
-        }));
-      }}
-      style={{ width:16, height:16, cursor:'pointer' }}
-    />
-    <label htmlFor="classTeacher" style={{ fontWeight:600, fontSize:'0.875rem', color:'#374151', cursor:'pointer' }}>
-      🎓 Make this teacher a Class Teacher
-    </label>
-  </div>
-  
-  {form.classTeacher && (
-    <div style={{ 
-      background:'#f0f9ff', 
-      border:'1px solid #bae6fd', 
-      borderRadius:10, 
-      padding:'12px 16px',
-      display:'grid',
-      gridTemplateColumns:'1fr 1fr',
-      gap:12
-    }}>
-      <F label="Assigned Class" req>
-        <select 
-          className="select" 
-          value={form.assignedClass}
-          onChange={e => setForm(p => ({ ...p, assignedClass: e.target.value }))}
-        >
-          <option value="">Select Class</option>
-          {CLASSES.map(c => <option key={c}>{c}</option>)}
-        </select>
-      </F>
-      <F label="Section" req>
-        <select 
-          className="select" 
-          value={form.section}
-          onChange={e => setForm(p => ({ ...p, section: e.target.value }))}
-        >
-          <option value="">Select Section</option>
-          {SECTIONS.map(s => <option key={s} value={s}>Section {s}</option>)}
-        </select>
-      </F>
-      <div style={{ gridColumn:'1/-1', fontSize:'0.75rem', color:'#0369a1' }}>
-        ℹ️ This teacher will be assigned as class teacher for the selected class and section.
-      </div>
-    </div>
-  )}
-</div>
+
 
           <F label="Username" req={!editTeacher}>
   <input

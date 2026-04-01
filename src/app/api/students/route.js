@@ -63,29 +63,24 @@ export async function POST(req) {
 
     if (finalUsername && password) {
       const existingUser = await prisma.user.findUnique({ where: { username: finalUsername } });
-      if (existingUser) {
-        return NextResponse.json({ error: 'Username already taken' }, { status: 400 });
-      }
+      if (existingUser) return NextResponse.json({ error: 'Username already taken' }, { status: 400 });
 
       const hashed = await bcrypt.hash(password, 10);
       const userRecord = await prisma.user.create({
         data: {
-          username: finalUsername,
-          password: hashed,
-          role: 'student',
-          name, 
-          email: email || '', 
-          phone: phone || '',
-          branch: branch || '', 
-          branchId: branchId || '',
-          class: cls, 
-          section, 
-          rollNo, 
-          isActive: true,
+          username: finalUsername, password: hashed, role: 'student',
+          name, email: email || '', phone: phone || '',
+          branch: branch || '', branchId: branchId || '',
+          class: cls, section, rollNo, isActive: true,
         },
       });
       userId = userRecord.id;
     }
+
+    // ✅ Auto-split totalFee into 3 terms on create
+    const totalFeeNum = Number(totalFee) || 0;
+    const base  = totalFeeNum > 0 ? Math.floor(totalFeeNum / 3) : 0;
+    const extra = totalFeeNum > 0 ? totalFeeNum - base * 3 : 0;
 
     const student = await prisma.student.create({
       data: {
@@ -98,11 +93,15 @@ export async function POST(req) {
         academicYear: academicYear || '2025-26',
         yearOfJoining: yearOfJoining || '',
         dateOfJoining: dateOfJoining || '',
-        totalFee: Number(totalFee) || 0,
+        totalFee: totalFeeNum,
         username: finalUsername,
-        userId, 
+        userId,
         status: 'Active',
         paidFee: 0,
+        term1: 0, term2: 0, term3: 0,
+        term1Due: base + extra,   // e.g. ₹35000 → 11667
+        term2Due: base,           // → 11667
+        term3Due: base,           // → 11666
       },
     });
 

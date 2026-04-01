@@ -247,21 +247,20 @@ export default function BranchAdminAttendance() {
               <th>Parent Phone</th><th>Today</th><th>Present</th><th>Absent</th><th>Overall %</th><th>View</th>
             </tr>
           </thead>
-          <tbody>
-            // With this:
-{loading ? (
-  <tr key="loading-row"><td colSpan={10} style={{ textAlign: 'center', padding: 48 }}>
-                <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
-                <span style={{ color: '#94a3b8' }}>Loading attendance...</span>
-              </td></tr>
-           // With this:
-) : paginated.length === 0 ? (
-  <tr key="empty-row"><td colSpan={10}><EmptyState message="No students found" /></td></tr>
-            ) : paginated.map((st, i) => {
-              const status = attMap[String(st._id)] || 'N/A';
-              const pct    = getPct(st);
-              return (
-                <tr key={st._id}>
+        
+<tbody>
+  {loading ? (
+    <tr key="loading-row">
+      <td colSpan={10} style={{ textAlign:'center', padding:48 }}>Loading...</td>
+    </tr>
+  ) : paginated.length === 0 ? (
+    <tr key="empty-row">
+      <td colSpan={10}>No records found</td>
+    </tr>
+  ) : paginated.map((st, i) => {
+    const pct = getPct(st);
+    return (
+      <tr key={st._id || `row-${i}`}>   {/* ← also add fallback key */}
                   <td style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{(page - 1) * perPage + i + 1}</td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

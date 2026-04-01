@@ -42,13 +42,15 @@ export default function TeacherEvents() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  useEffect(() => {
-    if (!user) return;
-    const params = new URLSearchParams();
-    if (user.branch) params.set('branch', user.branch);
-    params.set('published', 'true');
+  // Change to:
+useEffect(() => {
+  if (!user) return;
+  const params = new URLSearchParams();
+  if (user.branch) params.set('branch', user.branch);
+  params.set('published', 'true');
+  params.set('visibility', 'Teachers');   // ← add this line
 
-    fetch(`/api/events?${params}`)
+  fetch(`/api/events?${params}`)
       .then(r => r.json())
       .then(d => { if (d.success) setEvents(d.data || []); })
       .finally(() => setLoading(false));

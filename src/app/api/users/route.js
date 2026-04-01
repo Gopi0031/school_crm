@@ -5,8 +5,8 @@ import bcrypt from 'bcryptjs';
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const role     = searchParams.get('role');
-    const branchId = searchParams.get('branchId');
+    const role     = searchParams.get('role')     || '';
+    const branchId = searchParams.get('branchId') || '';
 
     const users = await prisma.user.findMany({
       where: {
@@ -14,11 +14,15 @@ export async function GET(req) {
         ...(branchId && { branchId }),
       },
       orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, username: true, role: true, name: true,
+        email: true, phone: true, branch: true, branchId: true,
+        employeeId: true, class: true, section: true,
+        rollNo: true, isActive: true, createdAt: true,
+      },
     });
 
-    // Strip passwords
-    const safe = users.map(({ password, ...u }) => u);
-    return NextResponse.json({ success: true, data: safe });
+    return NextResponse.json({ success: true, data: users });
   } catch (err) {
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
@@ -31,14 +35,17 @@ export async function POST(req) {
     const existing = await prisma.user.findUnique({
       where: { username: body.username?.toLowerCase() },
     });
-    if (existing) return NextResponse.json({ error: 'Username already exists' }, { status: 400 });
+    if (existing)
+      return NextResponse.json({ error: 'Username already exists' }, { status: 400 });
 
     const hashed = await bcrypt.hash(body.password, 10);
+    const { password, ...rest } = body;
+
     const user = await prisma.user.create({
-      data: { ...body, password: hashed, username: body.username.toLowerCase() },
+      data: { ...rest, password: hashed, username: body.username.toLowerCase() },
     });
 
-    const { password: _, ...safe } = user;
+    const { password: _p, ...safe } = user;
     return NextResponse.json({ success: true, data: safe }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });

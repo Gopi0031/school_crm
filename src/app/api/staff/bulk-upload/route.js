@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
-import * as XLSX        from 'xlsx';
-import bcrypt           from 'bcryptjs';
-import connectDB        from '@/lib/mongodb';
-import mongoose         from 'mongoose';
+import * as XLSX  from 'xlsx';
+import bcrypt     from 'bcryptjs';
+import prisma     from '@/lib/prisma';
 
 const ALIASES = {
   name:          ['name', 'staff name', 'full name'],
@@ -19,18 +18,14 @@ const ALIASES = {
   password:      ['password', 'pass', 'pwd'],
 };
 
-function normalize(key) {
-  return key?.toString().toLowerCase().trim().replace(/\s+/g, '');
-}
+function normalize(key) { return key?.toString().toLowerCase().trim().replace(/\s+/g, ''); }
 
 function mapRow(rawRow) {
-  const mapped  = {};
+  const mapped = {};
   const rawKeys = Object.keys(rawRow);
   for (const [field, aliases] of Object.entries(ALIASES)) {
     const matchedKey = rawKeys.find(k => aliases.includes(normalize(k)));
-    if (matchedKey !== undefined) {
-      mapped[field] = rawRow[matchedKey]?.toString().trim() || '';
-    }
+    if (matchedKey !== undefined) mapped[field] = rawRow[matchedKey]?.toString().trim() || '';
   }
   return mapped;
 }
@@ -44,25 +39,18 @@ export async function POST(request) {
     const branch   = formData.get('branch')   || '';
     const branchId = formData.get('branchId') || '';
 
-    if (!file) {
+    if (!file)
       return NextResponse.json({ success: false, message: 'No file provided' }, { status: 400 });
-    }
 
     const buffer   = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const rawRows  = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '' });
 
-    if (!rawRows.length) {
+    if (!rawRows.length)
       return NextResponse.json({ success: false, message: 'File is empty' }, { status: 400 });
-    }
-
-    await connectDB();
-    const staffCol = mongoose.connection.db.collection('staff');
-    const usersCol = mongoose.connection.db.collection('users');
 
     let inserted = 0, skipped = 0;
-    const errors      = [];
-    const credentials = [];
+    const errors = [], credentials = [];
 
     for (let i = 0; i < rawRows.length; i++) {
       const row    = mapRow(rawRows[i]);
@@ -74,10 +62,10 @@ export async function POST(request) {
       }
 
       const employeeId = `STF${Date.now().toString().slice(-4)}${String(i).padStart(2, '0')}`;
-      const username   = row.username || `staff.${row.name.toLowerCase().replace(/\s+/g, '.')}.${branch.toLowerCase().replace(/\s+/g, '')}${i}`;
+      const username   = (row.username || `staff.${row.name.toLowerCase().replace(/\s+/g, '.')}.${branch.toLowerCase().replace(/\s+/g, '')}${i}`).toLowerCase();
       const plainPwd   = row.password || DEFAULT_PASSWORD;
 
-      const userExists = await usersCol.findOne({ username });
+      const userExists = await prisma.user.findUnique({ where: { username } });
       if (userExists) {
         errors.push({ row: rowNum, reason: `Username "${username}" already taken` });
         skipped++; continue;
@@ -86,43 +74,47 @@ export async function POST(request) {
       try {
         const hashedPwd = await bcrypt.hash(plainPwd, 10);
 
-        const staffDoc = {
-          ...row,
-          branch,
-          branchId,
-          employeeId,
-          username,
-          status:      row.status || 'Active',
-          salary:      Number(row.salary) || 0,
-          presentDays: 0,
-          absentDays:  0,
-          totalDays:   0,
-          createdAt:   new Date(),
-          updatedAt:   new Date(),
-        };
-        delete staffDoc.password;
-        const result = await staffCol.insertOne(staffDoc);
-
-        await usersCol.insertOne({
-          username,
-          password:   hashedPwd,
-          role:       'staff',
-          branch,
-          branchId,
-          staffId:    result.insertedId,
-          employeeId,
-          name:       row.name,
-          email:      row.email || '',
-          createdAt:  new Date(),
+        const staff = await prisma.staff.create({
+          data: {
+            name:          row.name,
+            employeeId,
+            phone:         row.phone         || '',
+            email:         row.email         || '',
+            department:    row.role          || '',
+            designation:   row.role          || '',
+            qualification: row.qualification || '',
+            joinYear:      row.joinYear      || '',
+            salary:        Number(row.salary) || 0,
+            aadhaar:       row.aadhaar       || '',
+            pan:           row.pan           || '',
+            branch,
+            branchId,
+            status:        row.status || 'Active',
+            userId:        '',
+          },
         });
 
-        credentials.push({
-          name:       row.name,
-          employeeId,
-          username,
-          password:   plainPwd,
+        const user = await prisma.user.create({
+          data: {
+            username,
+            password:   hashedPwd,
+            role:       'staff',
+            name:       row.name,
+            email:      row.email || '',
+            branch,
+            branchId,
+            employeeId,
+            isActive:   true,
+          },
         });
 
+        // Link userId back to staff
+        await prisma.staff.update({
+          where: { id: staff.id },
+          data:  { userId: user.id },
+        });
+
+        credentials.push({ name: row.name, employeeId, username, password: plainPwd });
         inserted++;
       } catch (err) {
         errors.push({ row: rowNum, reason: err.message });
@@ -135,7 +127,6 @@ export async function POST(request) {
       message: `${inserted} staff member(s) inserted, ${skipped} skipped.`,
       inserted, skipped, errors, credentials,
     });
-
   } catch (err) {
     console.error('[bulk-upload/staff]', err);
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

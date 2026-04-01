@@ -1,80 +1,55 @@
 import { NextResponse } from 'next/server';
-import connectDB from '@/lib/mongodb';
-import Teacher from '@/models/Teacher';
-import User from '@/models/User';
+import prisma from '@/lib/prisma';
 
 export async function GET(req) {
   try {
-    await connectDB();
     const { searchParams } = new URL(req.url);
-    const branch = searchParams.get('branch');
+    const branch = searchParams.get('branch') || '';
 
-    const filter = {};
-    if (branch) filter.branch = { $regex: new RegExp(`^${branch.trim()}$`, 'i') };
+    const teachers = await prisma.teacher.findMany({
+      where: { branch: { equals: branch, mode: 'insensitive' } },
+      orderBy: { name: 'asc' },
+    });
 
-    const teachers = await Teacher.find(filter).sort({ name: 1 });
-    return NextResponse.json({ success: true, data: teachers });
+    // ✅ Normalize id → _id for frontend compatibility
+    const data = teachers.map(t => ({ ...t, _id: t.id }));
+
+    return NextResponse.json({ success: true, data });
   } catch (err) {
     console.error('[GET /api/class-teacher]', err);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
 export async function POST(req) {
   try {
-    await connectDB();
     const { teacherId, assignedClass, section } = await req.json();
+    if (!teacherId || !assignedClass || !section)
+      return NextResponse.json({ error: 'teacherId, assignedClass and section required' }, { status: 400 });
 
-    if (!teacherId || !assignedClass || !section) {
-      return NextResponse.json({ error: 'All fields required' }, { status: 400 });
-    }
+    // Check conflict
+    const conflict = await prisma.teacher.findFirst({
+      where: { assignedClass, section, classTeacher: true, id: { not: teacherId } },
+    });
+    if (conflict)
+      return NextResponse.json({
+        error: `${assignedClass}-${section} already has class teacher: ${conflict.name}`
+      }, { status: 400 });
 
-    // Check if another teacher is already class teacher for this class+section
-    const existing = await Teacher.findOne({
-      assignedClass,
-      section,
-      classTeacher: true,
-      _id: { $ne: teacherId },
+    const teacher = await prisma.teacher.update({
+      where: { id: teacherId },
+      data:  { classTeacher: true, assignedClass, section },
     });
 
-    if (existing) {
-      return NextResponse.json(
-        { error: `${assignedClass}-${section} already has a class teacher: ${existing.name}` },
-        { status: 400 }
-      );
-    }
-
-    // Update the teacher
-    const teacher = await Teacher.findByIdAndUpdate(
-      teacherId,
-      { 
-        $set: { 
-          assignedClass, 
-          section, 
-          classTeacher: true,
-          updatedAt: new Date()
-        } 
-      },
-      { new: true }
-    );
-
-    if (!teacher) {
-      return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
-    }
-
-    // ✅ ALSO update the linked User record
+    // ✅ Also update linked User record so teacher login shows correct class/section
     if (teacher.userId) {
-      await User.findByIdAndUpdate(teacher.userId, {
-        $set: {
-          assignedClass,
-          section,
-          class: assignedClass,
-        }
+      await prisma.user.update({
+        where: { id: teacher.userId },
+        data:  { class: assignedClass, section },
       });
-      console.log('[Class Teacher] ✅ Updated user:', teacher.userId.toString(), { assignedClass, section });
     }
 
-    return NextResponse.json({ success: true, data: teacher });
+    return NextResponse.json({ success: true, data: { ...teacher, _id: teacher.id } });
   } catch (err) {
     console.error('[POST /api/class-teacher]', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -83,59 +58,32 @@ export async function POST(req) {
 
 export async function PUT(req) {
   try {
-    await connectDB();
     const { teacherId, assignedClass, section } = await req.json();
+    if (!teacherId || !assignedClass || !section)
+      return NextResponse.json({ error: 'teacherId, assignedClass and section required' }, { status: 400 });
 
-    if (!teacherId || !assignedClass || !section) {
-      return NextResponse.json({ error: 'All fields required' }, { status: 400 });
-    }
+    // Check conflict — exclude current teacher
+    const conflict = await prisma.teacher.findFirst({
+      where: { assignedClass, section, classTeacher: true, id: { not: teacherId } },
+    });
+    if (conflict)
+      return NextResponse.json({
+        error: `${assignedClass}-${section} already has class teacher: ${conflict.name}`
+      }, { status: 400 });
 
-    // Check if another teacher is already class teacher for this class+section
-    const existing = await Teacher.findOne({
-      assignedClass,
-      section,
-      classTeacher: true,
-      _id: { $ne: teacherId },
+    const teacher = await prisma.teacher.update({
+      where: { id: teacherId },
+      data:  { assignedClass, section },
     });
 
-    if (existing) {
-      return NextResponse.json(
-        { error: `${assignedClass}-${section} already has a class teacher: ${existing.name}` },
-        { status: 400 }
-      );
-    }
-
-    // Update the teacher (reassign)
-    const teacher = await Teacher.findByIdAndUpdate(
-      teacherId,
-      { 
-        $set: { 
-          assignedClass, 
-          section, 
-          classTeacher: true,
-          updatedAt: new Date()
-        } 
-      },
-      { new: true }
-    );
-
-    if (!teacher) {
-      return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
-    }
-
-    // ✅ ALSO update the linked User record
     if (teacher.userId) {
-      await User.findByIdAndUpdate(teacher.userId, {
-        $set: {
-          assignedClass,
-          section,
-          class: assignedClass,
-        }
+      await prisma.user.update({
+        where: { id: teacher.userId },
+        data:  { class: assignedClass, section },
       });
-      console.log('[Class Teacher] ✅ Updated user (reassign):', teacher.userId.toString(), { assignedClass, section });
     }
 
-    return NextResponse.json({ success: true, data: teacher });
+    return NextResponse.json({ success: true, data: { ...teacher, _id: teacher.id } });
   } catch (err) {
     console.error('[PUT /api/class-teacher]', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -144,46 +92,26 @@ export async function PUT(req) {
 
 export async function DELETE(req) {
   try {
-    await connectDB();
     const { searchParams } = new URL(req.url);
     const teacherId = searchParams.get('teacherId');
+    if (!teacherId)
+      return NextResponse.json({ error: 'teacherId required' }, { status: 400 });
 
-    if (!teacherId) {
-      return NextResponse.json({ error: 'Teacher ID required' }, { status: 400 });
-    }
+    const teacher = await prisma.teacher.update({
+      where: { id: teacherId },
+      data:  { classTeacher: false, assignedClass: '' },
+    });
 
-    const teacher = await Teacher.findByIdAndUpdate(
-      teacherId,
-      { 
-        $set: { 
-          classTeacher: false, 
-          assignedClass: '', 
-          section: '',
-          updatedAt: new Date()
-        } 
-      },
-      { new: true }
-    );
-
-    if (!teacher) {
-      return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
-    }
-
-    // ✅ ALSO update the linked User record
     if (teacher.userId) {
-      await User.findByIdAndUpdate(teacher.userId, {
-        $set: {
-          assignedClass: '',
-          section: '',
-          class: '',
-        }
+      await prisma.user.update({
+        where: { id: teacher.userId },
+        data:  { class: '', section: '' },
       });
-      console.log('[Class Teacher] ✅ Removed user assignment:', teacher.userId.toString());
     }
 
-    return NextResponse.json({ success: true, message: 'Assignment removed' });
+    return NextResponse.json({ success: true });
   } catch (err) {
     console.error('[DELETE /api/class-teacher]', err);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

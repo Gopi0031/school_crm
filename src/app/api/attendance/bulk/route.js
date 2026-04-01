@@ -1,100 +1,68 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import connectDB from '@/lib/mongodb';
-import mongoose from 'mongoose';
 
 export async function POST(req) {
   try {
-    await connectDB();
-    const db = mongoose.connection.db;
     const { records } = await req.json();
-    
-    console.log('[Bulk Attendance] Received records:', records?.length);
-    
-    if (!records?.length) {
-      return NextResponse.json({ error: 'No records provided' }, { status: 400 });
-    }
 
-    // ✅ Validate and filter records
+    if (!records?.length)
+      return NextResponse.json({ error: 'No records provided' }, { status: 400 });
+
     const validRecords = records.filter(r => {
-      if (!r.entityId) {
-        console.warn('[Bulk Attendance] Missing entityId:', r);
-        return false;
-      }
+      if (!r.entityId) { console.warn('[Bulk Attendance] Missing entityId:', r); return false; }
       return true;
     });
 
-    if (validRecords.length === 0) {
-      return NextResponse.json({ 
-        error: 'No valid records - all records are missing entityId' 
-      }, { status: 400 });
-    }
+    if (!validRecords.length)
+      return NextResponse.json({ error: 'No valid records - all missing entityId' }, { status: 400 });
 
-    console.log('[Bulk Attendance] Valid records:', validRecords.length);
-
-    // ── Save to Prisma attendance table ──
+    // ── Upsert attendance records ──
     const results = await Promise.all(
-      validRecords.map(r => {
-        const entityId = String(r.entityId);
-        const date = r.date;
-        
-        return prisma.attendance.upsert({
-          where: { 
-            entityId_date: { entityId, date } 
-          },
-          update: { 
+      validRecords.map(r =>
+        prisma.attendance.upsert({
+          where:  { entityId_date: { entityId: String(r.entityId), date: r.date } },
+          update: {
             entityType: r.entityType || 'student',
-            status: r.status,
-            branch: r.branch || '',
-            class: r.class || '',
-            section: r.section || '',
-            markedBy: r.markedBy || '',
+            status:     r.status,
+            branch:     r.branch   || '',
+            class:      r.class    || '',
+            section:    r.section  || '',
+            markedBy:   r.markedBy || '',
           },
-          create: { 
-            entityId,
+          create: {
+            entityId:   String(r.entityId),
             entityType: r.entityType || 'student',
-            date,
-            status: r.status,
-            branch: r.branch || '',
-            class: r.class || '',
-            section: r.section || '',
-            markedBy: r.markedBy || '',
+            date:       r.date,
+            status:     r.status,
+            branch:     r.branch   || '',
+            class:      r.class    || '',
+            section:    r.section  || '',
+            markedBy:   r.markedBy || '',
           },
-        });
-      })
+        })
+      )
     );
 
-    // ── Also update student records (for quick access) ──
-    const studentUpdates = validRecords
-      .filter(r => r.entityType === 'student')
-      .map(r => ({
-        updateOne: {
-          filter: { _id: new mongoose.Types.ObjectId(r.entityId) },
-          update: { $set: { todayAttendance: r.status } }
-        }
-      }));
-
-    if (studentUpdates.length > 0) {
-      try {
-        await db.collection('students').bulkWrite(studentUpdates);
-        console.log('[Bulk Attendance] Updated student records:', studentUpdates.length);
-      } catch (updateErr) {
-        console.warn('[Bulk Attendance] Student update warning:', updateErr.message);
-      }
+    // ── Also update todayAttendance on Student record ──
+    const studentRecords = validRecords.filter(r => r.entityType === 'student');
+    if (studentRecords.length) {
+      await Promise.allSettled(
+        studentRecords.map(r =>
+          prisma.student.update({
+            where: { id: String(r.entityId) },
+            data:  { todayAttendance: r.status },
+          })
+        )
+      );
     }
 
-    console.log('[Bulk Attendance] ✅ Saved:', results.length);
-
-    return NextResponse.json({ 
-      success: true, 
-      message: `${validRecords.length} attendance record(s) saved`,
-      count: results.length
+    return NextResponse.json({
+      success: true,
+      message: `${results.length} attendance record(s) saved`,
+      count:   results.length,
     });
-
   } catch (err) {
-    console.error('[Bulk Attendance] ❌ Error:', err);
-    return NextResponse.json({ 
-      error: err.message || 'Failed to save attendance' 
-    }, { status: 500 });
+    console.error('[Bulk Attendance] Error:', err);
+    return NextResponse.json({ error: err.message || 'Failed to save attendance' }, { status: 500 });
   }
 }

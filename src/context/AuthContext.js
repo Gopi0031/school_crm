@@ -21,12 +21,31 @@ function normalizeUser(userData) {
   return {
     ...userData,
     role: normalizeRole(userData.role),
-    _id: userData._id || userData.id || '', // ✅ always ensure _id
+    _id: userData._id || userData.id || '',
+    // ✅ Ensure student-specific fields are preserved
+    ...(userData.studentId && {
+      studentId: userData.studentId,
+      studentName: userData.studentName || userData.name,
+      rollNo: userData.rollNo,
+      class: userData.class,
+      section: userData.section,
+      parentName: userData.parentName,
+      totalFee: userData.totalFee,
+      paidFee: userData.paidFee,
+    }),
+    // ✅ Ensure teacher-specific fields are preserved
+    ...(userData.teacherId && {
+      teacherId: userData.teacherId,
+      assignedClass: userData.assignedClass,
+      classTeacher: userData.classTeacher,
+      subject: userData.subject,
+      employeeId: userData.employeeId,
+    }),
   };
 }
 
 export function AuthProvider({ children }) {
-  const [user,    setUser]    = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -35,9 +54,19 @@ export function AuthProvider({ children }) {
       const stored = localStorage.getItem('erp_user');
       if (stored) {
         const parsed = JSON.parse(stored);
-        setUser(normalizeUser(parsed)); // ✅ normalize on rehydrate
+        const normalized = normalizeUser(parsed);
+        
+        console.log('📦 Restored user from storage:', {
+          username: normalized.username,
+          role: normalized.role,
+          studentId: normalized.studentId,
+          rollNo: normalized.rollNo,
+        });
+        
+        setUser(normalized);
       }
-    } catch {
+    } catch (e) {
+      console.error('Error restoring user:', e);
       localStorage.removeItem('erp_user');
     }
     setLoading(false);
@@ -45,21 +74,36 @@ export function AuthProvider({ children }) {
 
   const login = (userData) => {
     const normalized = normalizeUser(userData);
+    
+    console.log('✅ Logging in user:', {
+      username: normalized.username,
+      role: normalized.role,
+      studentId: normalized.studentId,
+      rollNo: normalized.rollNo,
+      branch: normalized.branch,
+    });
+    
     setUser(normalized);
     localStorage.setItem('erp_user', JSON.stringify(normalized));
   };
 
   const logout = () => {
+    console.log('👋 Logging out user:', user?.username);
     setUser(null);
     localStorage.removeItem('erp_user');
     router.replace('/login');
   };
 
-  // ✅ updateUser — patches BOTH state and localStorage so changes survive relogin
   const updateUser = (updates) => {
     setUser(prev => {
       if (!prev) return prev;
-      const updated = normalizeUser({ ...prev, ...updates }); // ✅ normalize on update too
+      const updated = normalizeUser({ ...prev, ...updates });
+      
+      console.log('🔄 Updating user:', {
+        username: updated.username,
+        updates: Object.keys(updates),
+      });
+      
       localStorage.setItem('erp_user', JSON.stringify(updated));
       return updated;
     });
@@ -68,7 +112,15 @@ export function AuthProvider({ children }) {
   const getDashboard = () => ROLE_REDIRECTS[user?.role] || '/login';
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updateUser, getDashboard, ROLE_REDIRECTS }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      loading, 
+      login, 
+      logout, 
+      updateUser, 
+      getDashboard, 
+      ROLE_REDIRECTS 
+    }}>
       {children}
     </AuthContext.Provider>
   );

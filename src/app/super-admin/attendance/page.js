@@ -1,3 +1,4 @@
+// src/app/super-admin/attendance/page.js
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
@@ -35,13 +36,6 @@ export default function SuperAdminAttendance() {
       if (bData.success) setBranches(bData.data || []);
       if (aData.success) setAttendance(aData.data || []);
 
-      console.log('[Attendance] Loaded:', {
-        students: sData.data?.length || 0,
-        branches: bData.data?.length || 0,
-        attendance: aData.data?.length || 0,
-        date
-      });
-
     } catch (err) {
       console.error('[Attendance] Load error:', err);
     }
@@ -50,7 +44,6 @@ export default function SuperAdminAttendance() {
 
   useEffect(() => { load(); }, [branch, date]);
 
-  // ── Create attendance map ──
   const attendanceMap = useMemo(() => {
     const map = {};
     attendance.forEach(a => {
@@ -60,7 +53,6 @@ export default function SuperAdminAttendance() {
     return map;
   }, [attendance]);
 
-  // ── Merge students with attendance ──
   const studentsWithAttendance = useMemo(() => {
     return students.map(s => {
       const studentId = String(s._id || s.id);
@@ -71,7 +63,6 @@ export default function SuperAdminAttendance() {
     });
   }, [students, attendanceMap]);
 
-  // ── Filter by search ──
   const filtered = useMemo(() => studentsWithAttendance.filter(s =>
     !search || 
     s.name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -80,13 +71,11 @@ export default function SuperAdminAttendance() {
 
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
-  // ── Stats ──
   const totalPresent = filtered.filter(s => s.todayAttendance === 'Present').length;
   const totalAbsent = filtered.filter(s => s.todayAttendance === 'Absent').length;
   const notMarked = filtered.filter(s => s.todayAttendance === 'N/A').length;
   const attendancePct = filtered.length ? Math.round(totalPresent / filtered.length * 100) : 0;
 
-  // ── Branch-wise chart data ──
   const chartData = branches.map(b => {
     const branchStudents = studentsWithAttendance.filter(s => s.branch === b.name);
     const present = branchStudents.filter(s => s.todayAttendance === 'Present').length;
@@ -107,14 +96,14 @@ export default function SuperAdminAttendance() {
         </button>
       </PageHeader>
 
-      {/* ── Stats Cards ── */}
+      {/* Stats Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 16, marginBottom: 20 }}>
         {[
           { t: 'Total Students', v: filtered.length, c: '#4f46e5' },
           { t: 'Present', v: totalPresent, c: '#10b981' },
           { t: 'Absent', v: totalAbsent, c: '#ef4444' },
           { t: 'Not Marked', v: notMarked, c: '#94a3b8' },
-          { t: 'Attendance %', v: `${attendancePct}%`, c: '#f59e0b' },
+          { t: "Today's Rate", v: `${attendancePct}%`, c: '#f59e0b' },
         ].map(({ t, v, c }) => (
           <div key={t} className="card" style={{ textAlign: 'center', borderTop: `3px solid ${c}`, padding: 14 }}>
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: c }}>{v}</div>
@@ -123,7 +112,7 @@ export default function SuperAdminAttendance() {
         ))}
       </div>
 
-      {/* ── Branch-wise Chart ── */}
+      {/* Branch-wise Chart */}
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ fontWeight: 700, marginBottom: 16, fontSize: '0.95rem' }}>Branch-wise Attendance — {date}</h3>
         {chartData.length === 0 || chartData.every(d => d.total === 0) ? (
@@ -147,7 +136,7 @@ export default function SuperAdminAttendance() {
         )}
       </div>
 
-      {/* ── Filters ── */}
+      {/* Filters */}
       <div className="card" style={{ marginBottom: 16, padding: '14px 18px' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <select 
@@ -186,7 +175,7 @@ export default function SuperAdminAttendance() {
         </div>
       </div>
 
-      {/* ── Table ── */}
+      {/* Table */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <TableWrapper>
           <thead>
@@ -198,23 +187,21 @@ export default function SuperAdminAttendance() {
               <th>Class</th>
               <th>Branch</th>
               <th>Today ({date})</th>
-              <th>Overall %</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr key="loading-row">
-                <td colSpan={8} style={{ textAlign: 'center', padding: 48 }}>
+                <td colSpan={7} style={{ textAlign: 'center', padding: 48 }}>
                   <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
                   <span style={{ color: '#94a3b8', fontSize: '0.83rem' }}>Loading attendance...</span>
                 </td>
               </tr>
             ) : paginated.length === 0 ? (
               <tr key="empty-row">
-                <td colSpan={8}><EmptyState message={search ? `No results for "${search}"` : 'No students found'} /></td>
+                <td colSpan={7}><EmptyState message={search ? `No results for "${search}"` : 'No students found'} /></td>
               </tr>
             ) : paginated.map((s, i) => {
-              const pct = s.totalWorkingDays ? Math.round((s.presentDays || 0) / s.totalWorkingDays * 100) : 0;
               const todayStatus = s.todayAttendance;
               
               return (
@@ -239,21 +226,6 @@ export default function SuperAdminAttendance() {
                     }}>
                       {todayStatus}
                     </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 52, height: 6, background: '#f1f5f9', borderRadius: 3 }}>
-                        <div style={{ 
-                          height: '100%', 
-                          width: `${pct}%`, 
-                          background: pct >= 75 ? '#10b981' : '#f59e0b', 
-                          borderRadius: 3 
-                        }} />
-                      </div>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: pct >= 75 ? '#10b981' : '#f59e0b' }}>
-                        {pct}%
-                      </span>
-                    </div>
                   </td>
                 </tr>
               );

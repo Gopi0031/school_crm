@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { PageHeader, Badge, TableWrapper, EmptyState, Modal } from '@/components/ui';
+import { PageHeader, Badge, TableWrapper, EmptyState } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { Check, X, Search, Save, RefreshCw, CheckCircle, XCircle, Lock } from 'lucide-react';
 
@@ -17,7 +17,6 @@ export default function MarkAttendancePage() {
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState({ msg: '', type: 'success' });
 
-  // ✅ Get teacher's assigned class
   const teacherClass = user?.assignedClass || user?.class || '';
   const teacherSection = user?.section || '';
 
@@ -28,7 +27,6 @@ export default function MarkAttendancePage() {
 
   const load = async () => {
     if (!teacherClass || !teacherSection) {
-      console.log('[Mark Attendance] No class assigned');
       setLoading(false);
       return;
     }
@@ -40,12 +38,6 @@ export default function MarkAttendancePage() {
       section: teacherSection
     });
 
-    console.log('[Mark Attendance] Loading:', { 
-      branch: user?.branch, 
-      class: teacherClass, 
-      section: teacherSection 
-    });
-
     try {
       const [sRes, aRes] = await Promise.all([
         fetch(`/api/students?${params}`),
@@ -54,22 +46,20 @@ export default function MarkAttendancePage() {
       const [sData, aData] = await Promise.all([sRes.json(), aRes.json()]);
 
       if (sData.success) {
-        console.log('[Mark Attendance] Students loaded:', sData.data.length);
+        console.log('✅ Students loaded:', sData.data.length);
         setStudents(sData.data);
       }
       
       if (aData.success) {
         const map = {};
         aData.data.forEach(a => { 
-          // Handle both _id and id
-          const key = String(a.entityId);
-          map[key] = a.status; 
+          map[a.entityId] = a.status; 
         });
-        console.log('[Mark Attendance] Existing attendance:', Object.keys(map).length);
+        console.log('✅ Existing attendance:', Object.keys(map).length);
         setAttMap(map);
       }
     } catch (err) {
-      console.error('[Mark Attendance] Load error:', err);
+      console.error('❌ Load error:', err);
       showToast('Failed to load data', 'error');
     }
     setLoading(false);
@@ -89,19 +79,23 @@ export default function MarkAttendancePage() {
     s.rollNo?.toLowerCase().includes(search.toLowerCase())
   ), [students, search]);
 
+  // ✅ Use _id for MongoDB ObjectId
+  const getStudentId = (student) => {
+    return student._id || student.id;
+  };
+
   const toggleStatus = (studentId) => {
-    const key = String(studentId);
     setAttMap(prev => ({
       ...prev,
-      [key]: prev[key] === 'Present' ? 'Absent' : 'Present'
+      [studentId]: prev[studentId] === 'Present' ? 'Absent' : 'Present'
     }));
   };
 
   const markAll = (status) => {
     const newMap = {};
     students.forEach(s => {
-      const key = String(s._id || s.id);
-      newMap[key] = status;
+      const id = getStudentId(s);
+      if (id) newMap[id] = status;
     });
     setAttMap(newMap);
   };
@@ -109,23 +103,27 @@ export default function MarkAttendancePage() {
   const saveAttendance = async () => {
     setSaving(true);
     
-    // ✅ Build records with entityId from student _id or id
-    const records = students.map(s => {
-      const studentId = String(s._id || s.id);
-      return {
-        entityId: studentId,  // ✅ This is the critical field
-        entityType: 'student',
-        date,
-        status: attMap[studentId] || 'Absent',
-        branch: user?.branch || '',
-        class: teacherClass,
-        section: teacherSection,
-        markedBy: user?.id || user?._id || '',
-      };
-    });
+    // ✅ Build records using _id (valid ObjectId)
+    const records = students
+      .filter(s => getStudentId(s)) // Only include students with valid ID
+      .map(s => {
+        const studentId = getStudentId(s);
+        return {
+          entityId: studentId,
+          entityType: 'student',
+          date,
+          status: attMap[studentId] || 'Absent',
+          branch: user?.branch || '',
+          class: teacherClass,
+          section: teacherSection,
+          markedBy: user?.id || user?._id || '',
+        };
+      });
 
-    console.log('[Mark Attendance] Saving records:', records.length);
-    console.log('[Mark Attendance] Sample record:', records[0]);
+    console.log('📝 Saving records:', records.length);
+    if (records.length > 0) {
+      console.log('📝 Sample record:', records[0]);
+    }
 
     try {
       const r = await fetch('/api/attendance/bulk', {
@@ -136,12 +134,14 @@ export default function MarkAttendancePage() {
       const d = await r.json();
       
       if (r.ok && d.success) {
-        showToast(`✓ Attendance saved for ${records.length} students`);
+        showToast(`✓ Attendance saved for ${d.count} students`);
+        // Reload to get updated counts
+        await load();
       } else {
         showToast(d.error || 'Failed to save', 'error');
       }
     } catch (err) {
-      console.error('[Mark Attendance] Save error:', err);
+      console.error('❌ Save error:', err);
       showToast('Network error', 'error');
     }
     setSaving(false);
@@ -151,7 +151,7 @@ export default function MarkAttendancePage() {
   const absentCount = students.length - presentCount;
   const attPct = students.length ? Math.round(presentCount / students.length * 100) : 0;
 
-  // ✅ Show message if no class assigned
+  // Show message if no class assigned
   if (!loading && (!teacherClass || !teacherSection)) {
     return (
       <AppLayout requiredRole="teacher-admin">
@@ -284,7 +284,9 @@ export default function MarkAttendancePage() {
                 <td colSpan={6}><EmptyState message="No students found" /></td>
               </tr>
             ) : filtered.map((s, i) => {
-              const studentId = String(s._id || s.id);
+              const studentId = getStudentId(s);
+              if (!studentId) return null;
+              
               const status = attMap[studentId] || 'Absent';
               const isPresent = status === 'Present';
               

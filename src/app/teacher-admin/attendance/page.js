@@ -1,14 +1,42 @@
+// src/app/teacher-admin/attendance/page.js
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { PageHeader, Badge, TableWrapper, Pagination, EmptyState, Modal } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
-import { Eye, Search, Calendar, FileDown, Loader, Lock } from 'lucide-react';
+import { Eye, Search, Calendar, FileDown, Loader, Lock, RefreshCw, ChevronLeft, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
+
+function buildCalendar(monthlyAtt, dateStr) {
+  const [y, m] = dateStr.split('-').map(Number);
+  const firstDay = new Date(y, m - 1, 1);
+  const lastDay = new Date(y, m, 0).getDate();
+  const startDow = firstDay.getDay();
+
+  const attMap = {};
+  monthlyAtt.forEach(a => {
+    const day = parseInt(a.date.split('-')[2]);
+    attMap[day] = a.status;
+  });
+
+  const weeks = [];
+  let week = Array(startDow).fill(null);
+
+  for (let d = 1; d <= lastDay; d++) {
+    week.push({ day: d, status: attMap[d] || null });
+    if (week.length === 7) { weeks.push(week); week = []; }
+  }
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null);
+    weeks.push(week);
+  }
+
+  return { weeks, present: monthlyAtt.filter(a => a.status === 'Present').length, absent: monthlyAtt.filter(a => a.status === 'Absent').length, total: monthlyAtt.length };
+}
 
 export default function TeacherAttendancePage() {
   const { user } = useAuth();
   const today = new Date().toISOString().split('T')[0];
-  
+
   const [students, setStudents] = useState([]);
   const [attMap, setAttMap] = useState({});
   const [loading, setLoading] = useState(true);
@@ -18,68 +46,75 @@ export default function TeacherAttendancePage() {
   const [viewStudent, setViewStudent] = useState(null);
   const [monthlyAtt, setMonthlyAtt] = useState([]);
   const [loadingMonthly, setLoadingMonthly] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [monthlyMonth, setMonthlyMonth] = useState(date.slice(0, 7));
   const perPage = 10;
 
-  // ✅ Get teacher's assigned class and section
   const teacherClass = user?.assignedClass || user?.class || '';
   const teacherSection = user?.section || '';
 
   const load = async () => {
-    if (!teacherClass || !teacherSection) {
-      console.log('[Attendance] Teacher class/section not found:', { teacherClass, teacherSection });
-      setLoading(false);
-      return;
-    }
-
+    if (!teacherClass || !teacherSection) { setLoading(false); return; }
     setLoading(true);
-    const params = new URLSearchParams({ 
-      branch: user?.branch || '',
-      class: teacherClass,
-      section: teacherSection
-    });
-
-    console.log('[Attendance] Loading students for:', { 
-      branch: user?.branch, 
-      class: teacherClass, 
-      section: teacherSection 
-    });
 
     try {
+      const params = new URLSearchParams({
+        branch: user?.branch || '',
+        class: teacherClass,
+        section: teacherSection,
+      });
+
       const [sRes, aRes] = await Promise.all([
         fetch(`/api/students?${params}`),
-        fetch(`/api/attendance?entityType=student&date=${date}&branch=${user?.branch||''}&class=${teacherClass}&section=${teacherSection}`),
+        fetch(`/api/attendance?entityType=student&date=${date}&branch=${user?.branch || ''}&class=${teacherClass}&section=${teacherSection}`),
       ]);
       const [sData, aData] = await Promise.all([sRes.json(), aRes.json()]);
 
-      if (sData.success) {
-        console.log('[Attendance] Loaded students:', sData.data.length);
-        setStudents(sData.data);
-      }
+      if (sData.success) setStudents(sData.data);
       if (aData.success) {
         const map = {};
         aData.data.forEach(a => { map[String(a.entityId)] = a.status; });
         setAttMap(map);
       }
     } catch (err) {
-      console.error('[Attendance] Load error:', err);
+      console.error('Load error:', err);
     }
     setLoading(false);
   };
 
-  useEffect(() => { 
-    if (user && (teacherClass || teacherSection)) {
-      load(); 
-    }
-  }, [user, teacherClass, teacherSection, date]);
+  useEffect(() => { if (user && teacherClass) load(); }, [user, teacherClass, teacherSection, date]);
 
-  const loadMonthly = async (studentId) => {
+  const loadMonthly = async (studentId, month) => {
     setLoadingMonthly(true);
-    const month = date.slice(0, 7);
-    const r = await fetch(`/api/attendance/monthly?entityId=${studentId}&month=${month}`);
-    const d = await r.json();
-    if (d.success) setMonthlyAtt(d.data);
+    try {
+      const res = await fetch(`/api/attendance/monthly?entityId=${studentId}&month=${month}`);
+      const data = await res.json();
+      if (data.success) setMonthlyAtt(data.data);
+      else setMonthlyAtt([]);
+    } catch { setMonthlyAtt([]); }
     setLoadingMonthly(false);
+  };
+
+  const openMonthly = async (student) => {
+    const id = student._id || student.id;
+    const m = date.slice(0, 7);
+    setViewStudent({ ...student, showMonthly: true });
+    setMonthlyMonth(m);
+    await loadMonthly(id, m);
+  };
+
+  const changeMonthlyMonth = async (direction) => {
+    const [y, m] = monthlyMonth.split('-').map(Number);
+    let newY = y, newM = m + direction;
+    if (newM < 1) { newM = 12; newY--; }
+    if (newM > 12) { newM = 1; newY++; }
+    const newMonth = `${newY}-${String(newM).padStart(2, '0')}`;
+
+    const todayMonth = today.slice(0, 7);
+    if (newMonth > todayMonth) return;
+
+    setMonthlyMonth(newMonth);
+    const id = viewStudent._id || viewStudent.id;
+    await loadMonthly(id, newMonth);
   };
 
   const filtered = useMemo(() => students.filter(s =>
@@ -90,130 +125,23 @@ export default function TeacherAttendancePage() {
 
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
-  const getStudentAttPct = (s) =>
-    s.totalWorkingDays ? Math.round(s.presentDays / s.totalWorkingDays * 100) : 0;
-
   const presentCount = Object.values(attMap).filter(v => v === 'Present').length;
   const absentCount = students.length - presentCount;
   const attPct = students.length ? Math.round(presentCount / students.length * 100) : 0;
 
-  const exportPDF = () => {
-    setExporting(true);
-    const rows = filtered.map((s, i) => {
-      const status = attMap[String(s._id)] || 'N/A';
-      const pct = getStudentAttPct(s);
-      const statusColor = status === 'Present' ? '#16a34a' : status === 'Absent' ? '#dc2626' : '#94a3b8';
-      const pctColor = pct >= 75 ? '#16a34a' : '#f59e0b';
-      return `
-        <tr style="background:${i % 2 === 0 ? '#ffffff' : '#f8fafc'}">
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#94a3b8">${i + 1}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#4f46e5">${s.rollNo}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600">${s.name}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b">${s.parentName || '—'}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#64748b">${s.phone || '—'}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">
-            <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${status === 'Present' ? '#dcfce7' : status === 'Absent' ? '#fee2e2' : '#f1f5f9'};color:${statusColor}">${status}</span>
-          </td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#10b981">${s.presentDays || 0}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;color:${pctColor}">${pct}%</td>
-        </tr>`;
-    }).join('');
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const weekDays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const calData = viewStudent?.showMonthly ? buildCalendar(monthlyAtt, `${monthlyMonth}-01`) : null;
+  const [mYear, mMonth] = monthlyMonth.split('-').map(Number);
 
-    const html = `
-      <!DOCTYPE html><html><head><meta charset="UTF-8">
-      <title>Attendance Report — ${teacherClass} ${teacherSection} — ${date}</title>
-      <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; background:#fff; color:#1e293b; padding:32px; }
-        .top-bar { background: linear-gradient(135deg, #4f46e5, #7c3aed); color:white; padding:20px 28px; border-radius:12px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center; }
-        .school-name { font-size:20px; font-weight:800; letter-spacing:-0.3px; }
-        .report-title { font-size:13px; opacity:0.85; margin-top:4px; }
-        .top-right { text-align:right; font-size:12px; opacity:0.9; line-height:1.8; }
-        .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px; }
-        .stat { padding:14px 16px; border-radius:10px; text-align:center; }
-        .stat-val { font-size:22px; font-weight:800; }
-        .stat-lbl { font-size:11px; margin-top:3px; opacity:0.75; }
-        table { width:100%; border-collapse:collapse; font-size:12.5px; }
-        thead tr { background:#4f46e5; }
-        thead th { padding:10px 10px; text-align:left; color:white; font-size:11px; font-weight:700; letter-spacing:0.03em; }
-        .footer { margin-top:24px; padding-top:14px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:10.5px; color:#94a3b8; }
-        @media print {
-          body { padding:16px; }
-          .top-bar { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-          thead tr { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-          .stat { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-        }
-      </style></head>
-      <body>
-        <div class="top-bar">
-          <div>
-            <div class="school-name">📚 SchoolERP — Attendance Report</div>
-            <div class="report-title">${user?.branch} &nbsp;•&nbsp; ${teacherClass} — Section ${teacherSection} &nbsp;•&nbsp; Date: ${date}</div>
-          </div>
-          <div class="top-right">
-            <div>Teacher: <b>${user?.name}</b></div>
-            <div>Generated: ${new Date().toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })}</div>
-          </div>
-        </div>
-        <div class="stats">
-          <div class="stat" style="background:#eff6ff;border-left:4px solid #4f46e5">
-            <div class="stat-val" style="color:#4f46e5">${students.length}</div>
-            <div class="stat-lbl" style="color:#4f46e5">Total Students</div>
-          </div>
-          <div class="stat" style="background:#f0fdf4;border-left:4px solid #10b981">
-            <div class="stat-val" style="color:#10b981">${presentCount}</div>
-            <div class="stat-lbl" style="color:#10b981">Present Today</div>
-          </div>
-          <div class="stat" style="background:#fff5f5;border-left:4px solid #ef4444">
-            <div class="stat-val" style="color:#ef4444">${absentCount}</div>
-            <div class="stat-lbl" style="color:#ef4444">Absent Today</div>
-          </div>
-          <div class="stat" style="background:#fffbeb;border-left:4px solid #f59e0b">
-            <div class="stat-val" style="color:#f59e0b">${attPct}%</div>
-            <div class="stat-lbl" style="color:#f59e0b">Attendance %</div>
-          </div>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width:40px">S.No</th><th>Roll No</th><th>Student Name</th>
-              <th>Parent Name</th><th>Phone</th><th>Today</th><th>Present Days</th><th>Overall %</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div class="footer">
-          <span>SchoolERP &nbsp;•&nbsp; ${user?.branch} &nbsp;•&nbsp; ${teacherClass} — Section ${teacherSection}</span>
-          <span>Total Records: ${filtered.length} &nbsp;•&nbsp; Printed on ${new Date().toLocaleString('en-IN')}</span>
-        </div>
-      </body></html>`;
-
-    const win = window.open('', '_blank');
-    win.document.write(html);
-    win.document.close();
-    setTimeout(() => { win.print(); setExporting(false); }, 500);
-  };
-
-  // ✅ Show message if teacher has no assigned class
   if (!loading && (!teacherClass || !teacherSection)) {
     return (
       <AppLayout requiredRole="teacher-admin">
-        <PageHeader title="Attendance" subtitle="View and manage student attendance" />
+        <PageHeader title="Attendance" subtitle="View student attendance" />
         <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
-          <div style={{ width: 64, height: 64, background: '#fee2e2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-            <Lock size={28} color="#ef4444" />
-          </div>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>
-            No Class Assigned
-          </h3>
-          <p style={{ color: '#64748b', fontSize: '0.875rem', maxWidth: 400, margin: '0 auto' }}>
-            You are not assigned as a class teacher yet. Please contact your branch administrator to assign you a class.
-          </p>
-          <div style={{ marginTop: 16, padding: '12px 20px', background: '#f8fafc', borderRadius: 10, display: 'inline-block' }}>
-            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Your Account</div>
-            <div style={{ fontWeight: 600, color: '#1e293b', marginTop: 4 }}>{user?.name}</div>
-            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{user?.branch}</div>
-          </div>
+          <Lock size={28} color="#ef4444" style={{ margin: '0 auto 16px' }} />
+          <h3 style={{ color: '#1e293b', marginBottom: 8 }}>No Class Assigned</h3>
+          <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Contact your branch admin.</p>
         </div>
       </AppLayout>
     );
@@ -222,30 +150,13 @@ export default function TeacherAttendancePage() {
   return (
     <AppLayout requiredRole="teacher-admin">
       <PageHeader title="Attendance" subtitle={`${teacherClass} — Section ${teacherSection}`}>
-        <button
-          className="btn btn-primary"
-          onClick={exportPDF}
-          disabled={exporting || students.length === 0}
-          style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 130, justifyContent: 'center' }}
-        >
-          {exporting
-            ? <><Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> Preparing...</>
-            : <><FileDown size={14} /> Export PDF</>}
-          <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <button className="btn btn-outline" onClick={load} disabled={loading}>
+          <RefreshCw size={14} /> Refresh
         </button>
       </PageHeader>
 
-      {/* ── Class Info Banner ─────────────────────────────── */}
-      <div style={{ 
-        background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', 
-        borderRadius: 12, 
-        padding: '14px 20px', 
-        marginBottom: 16,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        color: 'white'
-      }}>
+      {/* Banner */}
+      <div style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', borderRadius: 12, padding: '14px 20px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
         <div>
           <div style={{ fontSize: '0.75rem', opacity: 0.85 }}>Class Teacher For</div>
           <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{teacherClass} — Section {teacherSection}</div>
@@ -256,13 +167,13 @@ export default function TeacherAttendancePage() {
         </div>
       </div>
 
-      {/* ── Summary Cards ─────────────────────────────────── */}
+      {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 16 }}>
         {[
-          { l: 'Total Students', v: students.length, c: '#4f46e5' },
-          { l: 'Present Today', v: presentCount, c: '#10b981' },
-          { l: 'Absent Today', v: absentCount, c: '#ef4444' },
-          { l: 'Attendance %', v: `${attPct}%`, c: '#f59e0b' },
+          { l: 'Total', v: students.length, c: '#4f46e5' },
+          { l: 'Present', v: presentCount, c: '#10b981' },
+          { l: 'Absent', v: absentCount, c: '#ef4444' },
+          { l: "Today's Rate", v: `${attPct}%`, c: '#f59e0b' },
         ].map(({ l, v, c }) => (
           <div key={l} className="card" style={{ textAlign: 'center', borderTop: `3px solid ${c}`, padding: 14 }}>
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: c }}>{v}</div>
@@ -271,98 +182,68 @@ export default function TeacherAttendancePage() {
         ))}
       </div>
 
-      {/* ── Filters (Date and Search only - no class/section) ───────────────────────────────────────── */}
+      {/* Filters */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            className="input" type="date" value={date} max={today}
-            onChange={e => setDate(e.target.value)}
-            style={{ maxWidth: 160 }}
-          />
+          <input className="input" type="date" value={date} max={today} onChange={e => setDate(e.target.value)} style={{ maxWidth: 160 }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, maxWidth: 260, background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '7px 12px' }}>
             <Search size={14} color="#94a3b8" />
-            <input
-              style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '0.83rem', flex: 1 }}
-              placeholder="Search name or roll no..."
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-            />
+            <input style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '0.83rem', flex: 1 }}
+              placeholder="Search..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           </div>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
-            {filtered.length} students
-          </span>
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8', marginLeft: 'auto' }}>{filtered.length} students</span>
         </div>
       </div>
 
-      {/* ── Table ─────────────────────────────────────────── */}
+      {/* Table */}
       <div className="card">
         <TableWrapper>
           <thead>
             <tr>
               <th>S.No</th>
               <th>Roll No</th>
-              <th>Status</th>
               <th>Student Name</th>
-              <th>Class</th>
-              <th>Today</th>
-              <th>Overall %</th>
-              <th>Monthly</th>
-              <th>View</th>
+              <th>Today ({date})</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr key="loading-row">
-                <td colSpan={9} style={{ textAlign: 'center', padding: 52 }}>
-                  <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
-                  <span style={{ color: '#94a3b8', fontSize: '0.83rem' }}>Loading students...</span>
-                </td>
-              </tr>
+              <tr key="l"><td colSpan={5} style={{ textAlign: 'center', padding: 52 }}>
+                <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
+                Loading...
+              </td></tr>
             ) : paginated.length === 0 ? (
-              <tr key="empty-row">
-                <td colSpan={9}><EmptyState message="No students found" /></td>
-              </tr>
+              <tr key="e"><td colSpan={5}><EmptyState message="No students found" /></td></tr>
             ) : paginated.map((s, i) => {
-              const todayStatus = attMap[String(s._id)] || attMap[String(s.id)] || 'N/A';
-              const pct = getStudentAttPct(s);
+              const sid = String(s._id || s.id);
+              const todayStatus = attMap[sid] || 'N/A';
               return (
-                <tr key={s._id || s.id || `student-${i}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{(page - 1) * perPage + i + 1}</td>
-                  <td style={{ fontWeight: 700, color: '#4f46e5', fontSize: '0.83rem' }}>{s.rollNo}</td>
-                  <td><Badge>{s.status || 'Active'}</Badge></td>
+                <tr key={sid}>
+                  <td style={{ color: '#94a3b8' }}>{(page - 1) * perPage + i + 1}</td>
+                  <td style={{ fontWeight: 700, color: '#4f46e5' }}>{s.rollNo}</td>
                   <td>
-                    <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{s.name}</div>
+                    <div style={{ fontWeight: 600 }}>{s.name}</div>
                     <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>{s.gender}</div>
                   </td>
-                  <td style={{ fontSize: '0.83rem', color: '#64748b' }}>{s.class} — {s.section}</td>
                   <td>
                     <span style={{
                       padding: '3px 10px', borderRadius: 20, fontSize: '0.73rem', fontWeight: 700,
                       background: todayStatus === 'Present' ? '#dcfce7' : todayStatus === 'Absent' ? '#fee2e2' : '#f1f5f9',
                       color: todayStatus === 'Present' ? '#16a34a' : todayStatus === 'Absent' ? '#dc2626' : '#94a3b8',
-                    }}>
-                      {todayStatus}
-                    </span>
+                    }}>{todayStatus}</span>
                   </td>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 52, height: 6, background: '#f1f5f9', borderRadius: 3 }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: pct >= 75 ? '#10b981' : '#f59e0b', borderRadius: 3 }} />
-                      </div>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: pct >= 75 ? '#10b981' : '#f59e0b' }}>{pct}%</span>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.7rem' }}
+                        onClick={() => openMonthly(s)}>
+                        <Calendar size={11} /> Monthly
+                      </button>
+                      <button className="btn btn-primary" style={{ padding: '4px 8px', fontSize: '0.7rem' }}
+                        onClick={() => setViewStudent({ ...s, showMonthly: false })}>
+                        <Eye size={11} /> View
+                      </button>
                     </div>
-                  </td>
-                  <td>
-                    <button className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 4 }}
-                      onClick={async () => { setViewStudent({ ...s, showMonthly: true }); await loadMonthly(s._id || s.id); }}>
-                      <Calendar size={11} /> Monthly
-                    </button>
-                  </td>
-                  <td>
-                    <button className="btn btn-primary" style={{ padding: '4px 8px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: 4 }}
-                      onClick={() => setViewStudent({ ...s, showMonthly: false })}>
-                      <Eye size={11} /> View
-                    </button>
                   </td>
                 </tr>
               );
@@ -372,51 +253,30 @@ export default function TeacherAttendancePage() {
         <Pagination total={filtered.length} page={page} perPage={perPage} onChange={setPage} />
       </div>
 
-      {/* ── Student Detail Modal ──────────────────────────── */}
+      {/* Detail Modal */}
       {viewStudent && !viewStudent.showMonthly && (
         <Modal open onClose={() => setViewStudent(null)} title={viewStudent.name} size="md">
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'linear-gradient(135deg,#eff6ff,#e0f2fe)', borderRadius: 10, padding: '14px 16px', marginBottom: 18 }}>
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '1.2rem', flexShrink: 0 }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '1.2rem' }}>
               {viewStudent.name?.charAt(0)}
             </div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#1e293b' }}>{viewStudent.name}</div>
+              <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{viewStudent.name}</div>
               <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{viewStudent.rollNo} • {viewStudent.class} — {viewStudent.section}</div>
             </div>
-            <span style={{
-              marginLeft: 'auto', padding: '4px 12px', borderRadius: 20, fontSize: '0.73rem', fontWeight: 700,
-              background: attMap[String(viewStudent._id)] === 'Present' ? '#dcfce7' : '#fee2e2',
-              color: attMap[String(viewStudent._id)] === 'Present' ? '#16a34a' : '#dc2626',
-            }}>
-              {attMap[String(viewStudent._id)] || 'N/A'}
-            </span>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
             {[
-              { l: 'Present Days', v: viewStudent.presentDays || 0, c: '#10b981' },
-              { l: 'Absent Days', v: (viewStudent.totalWorkingDays || 0) - (viewStudent.presentDays || 0), c: '#ef4444' },
-              { l: 'Attendance %', v: `${getStudentAttPct(viewStudent)}%`, c: '#4f46e5' },
-            ].map(({ l, v, c }) => (
-              <div key={l} style={{ background: `${c}12`, borderRadius: 10, padding: 14, textAlign: 'center', borderTop: `3px solid ${c}` }}>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: c }}>{v}</div>
-                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 3 }}>{l}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-            {[
-              ['Total Days', viewStudent.totalWorkingDays || 220],
-              ['Today', attMap[String(viewStudent._id)] || 'N/A'],
-              ['Parent', viewStudent.parentName],
-              ['Phone', viewStudent.phone],
-              ['Total Fee', `₹${(viewStudent.totalFee || 0).toLocaleString()}`],
-              ['Due Fee', `₹${((viewStudent.totalFee || 0) - (viewStudent.paidFee || 0)).toLocaleString()}`],
+              ['Roll No', viewStudent.rollNo],
+              ['Class', `${viewStudent.class} — ${viewStudent.section}`],
+              ['Gender', viewStudent.gender || '—'],
+              ['Phone', viewStudent.phone || '—'],
+              ['Today\'s Status', attMap[String(viewStudent._id || viewStudent.id)] || 'N/A'],
+              ['Parent', viewStudent.parentName || '—'],
             ].map(([l, v]) => (
               <div key={l} style={{ padding: '8px 0', borderBottom: '1px solid #f8fafc' }}>
                 <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>{l}</div>
-                <div style={{ fontWeight: 600, fontSize: '0.875rem', marginTop: 2 }}>{v || '—'}</div>
+                <div style={{ fontWeight: 600, fontSize: '0.875rem', marginTop: 2 }}>{v}</div>
               </div>
             ))}
           </div>
@@ -426,50 +286,135 @@ export default function TeacherAttendancePage() {
         </Modal>
       )}
 
-      {/* ── Monthly Attendance Modal ──────────────────────── */}
+      {/* Monthly Calendar Modal */}
       {viewStudent?.showMonthly && (
-        <Modal open onClose={() => setViewStudent(null)} title={`Monthly Attendance — ${viewStudent.name}`} size="md">
-          <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{date.slice(0, 7)} &nbsp;•&nbsp; {viewStudent.class} — {viewStudent.section}</span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.75rem' }}>
-                <span style={{ width: 11, height: 11, background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 3, display: 'inline-block' }} />
-                Present ({monthlyAtt.filter(a => a.status === 'Present').length})
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.75rem' }}>
-                <span style={{ width: 11, height: 11, background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 3, display: 'inline-block' }} />
-                Absent ({monthlyAtt.filter(a => a.status === 'Absent').length})
-              </span>
+        <Modal open onClose={() => { setViewStudent(null); setMonthlyAtt([]); }}
+          title={`Monthly Attendance — ${viewStudent.name}`} size="md">
+
+          {/* Month navigation */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <button onClick={() => changeMonthlyMonth(-1)}
+              style={{ width: 36, height: 36, borderRadius: '50%', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronLeft size={18} color="#64748b" />
+            </button>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1e293b' }}>
+                {months[mMonth - 1]} {mYear}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                {viewStudent.rollNo} • {viewStudent.class} — {viewStudent.section}
+              </div>
             </div>
+            <button onClick={() => changeMonthlyMonth(1)}
+              disabled={monthlyMonth >= today.slice(0, 7)}
+              style={{ width: 36, height: 36, borderRadius: '50%', border: '1px solid #e2e8f0', background: 'white', cursor: monthlyMonth >= today.slice(0, 7) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: monthlyMonth >= today.slice(0, 7) ? 0.4 : 1 }}>
+              <ChevronRight size={18} color="#64748b" />
+            </button>
           </div>
 
-          {loadingMonthly ? (
-            <div style={{ textAlign: 'center', padding: 36 }}>
-              <div style={{ width: 28, height: 28, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
-              <span style={{ color: '#94a3b8', fontSize: '0.83rem' }}>Loading...</span>
+          {/* Stats row */}
+          {calData && (
+            <div style={{ display: 'flex', gap: 14, justifyContent: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                <CheckCircle size={14} color="#16a34a" />
+                <span style={{ fontWeight: 700, color: '#16a34a', fontSize: '0.85rem' }}>{calData.present} Present</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
+                <XCircle size={14} color="#dc2626" />
+                <span style={{ fontWeight: 700, color: '#dc2626', fontSize: '0.85rem' }}>{calData.absent} Absent</span>
+              </div>
+              <div style={{ padding: '6px 14px', background: '#f1f5f9', borderRadius: 8 }}>
+                <span style={{ fontWeight: 700, color: '#6366f1', fontSize: '0.85rem' }}>{calData.total} Days</span>
+              </div>
             </div>
-          ) : monthlyAtt.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 36, color: '#94a3b8', fontSize: '0.875rem' }}>
-              No attendance records found for this month
+          )}
+
+          {loadingMonthly ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <div style={{ width: 32, height: 32, border: '3px solid #e2e8f0', borderTopColor: '#4f46e5', borderRadius: '50%', animation: 'spin 0.7s linear infinite', margin: '0 auto 10px' }} />
+              Loading...
+            </div>
+          ) : !calData || calData.total === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
+              <Calendar size={40} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
+              No attendance records for {months[mMonth - 1]} {mYear}
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 5, marginBottom: 6 }}>
-                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                  <div key={d} style={{ textAlign: 'center', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, paddingBottom: 3 }}>{d}</div>
+              {/* Weekday headers */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, marginBottom: 4 }}>
+                {weekDays.map((d, i) => (
+                  <div key={d} style={{ textAlign: 'center', padding: '6px 0', fontSize: '0.7rem', fontWeight: 700, color: i === 0 || i === 6 ? '#ef4444' : '#64748b' }}>{d}</div>
                 ))}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 5 }}>
-                {monthlyAtt.map((a, idx) => (
-                  <div key={a._id || `att-${idx}`} style={{
-                    textAlign: 'center', padding: '8px 4px', borderRadius: 8,
-                    background: a.status === 'Present' ? '#dcfce7' : '#fee2e2',
-                    border: `1px solid ${a.status === 'Present' ? '#bbf7d0' : '#fecaca'}`,
-                  }}>
-                    <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{a.date?.slice(8)}</div>
-                    <div style={{ fontSize: '0.7rem', fontWeight: 800, color: a.status === 'Present' ? '#16a34a' : '#dc2626', marginTop: 2 }}>
-                      {a.status === 'Present' ? 'P' : 'A'}
-                    </div>
+
+              {/* Calendar grid */}
+              {calData.weeks.map((week, wi) => (
+                <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, marginBottom: 4 }}>
+                  {week.map((cell, ci) => {
+                    if (!cell) return <div key={ci} style={{ aspectRatio: '1', minHeight: 44 }} />;
+
+                    const { day, status } = cell;
+                    const todayNum = new Date().getDate();
+                    const isToday = monthlyMonth === today.slice(0, 7) && day === todayNum;
+
+                    let bg = '#f8fafc', border = '#e2e8f0', color = '#94a3b8', label = '';
+                    if (status === 'Present') { bg = '#dcfce7'; border = '#86efac'; color = '#16a34a'; label = 'P'; }
+                    else if (status === 'Absent') { bg = '#fee2e2'; border = '#fca5a5'; color = '#dc2626'; label = 'A'; }
+
+                    return (
+                      <div key={ci} style={{
+                        aspectRatio: '1', minHeight: 44,
+                        background: bg,
+                        border: `2px solid ${isToday ? '#4f46e5' : border}`,
+                        borderRadius: 8,
+                        display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center',
+                        position: 'relative',
+                        boxShadow: isToday ? '0 0 0 2px #4f46e520' : 'none',
+                      }}>
+                        {isToday && (
+                          <div style={{ position: 'absolute', top: 3, right: 3, width: 5, height: 5, background: '#4f46e5', borderRadius: '50%' }} />
+                        )}
+                        <div style={{ fontSize: '0.85rem', fontWeight: 700, color, lineHeight: 1 }}>{day}</div>
+                        {label && (
+                          <div style={{ fontSize: '0.6rem', fontWeight: 800, color, marginTop: 2 }}>{label}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              {/* Attendance bar */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: 6 }}>
+                  <span style={{ color: '#64748b' }}>Monthly Rate</span>
+                  <span style={{ fontWeight: 700, color: calData.total > 0 && Math.round(calData.present / calData.total * 100) >= 75 ? '#16a34a' : '#f59e0b' }}>
+                    {calData.total > 0 ? Math.round(calData.present / calData.total * 100) : 0}%
+                  </span>
+                </div>
+                <div style={{ height: 8, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${calData.total > 0 ? Math.round(calData.present / calData.total * 100) : 0}%`,
+                    background: calData.total > 0 && Math.round(calData.present / calData.total * 100) >= 75 ? '#10b981' : '#f59e0b',
+                    borderRadius: 99, transition: 'width 0.5s ease',
+                  }} />
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 14 }}>
+                {[
+                  { l: 'Present', bg: '#dcfce7', b: '#86efac', c: '#16a34a' },
+                  { l: 'Absent', bg: '#fee2e2', b: '#fca5a5', c: '#dc2626' },
+                  { l: 'Not Marked', bg: '#f8fafc', b: '#e2e8f0', c: '#94a3b8' },
+                  { l: 'Today', bg: 'white', b: '#4f46e5', c: '#4f46e5' },
+                ].map(({ l, bg, b, c }) => (
+                  <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.7rem' }}>
+                    <div style={{ width: 14, height: 14, background: bg, border: `2px solid ${b}`, borderRadius: 3 }} />
+                    <span style={{ color: c, fontWeight: 600 }}>{l}</span>
                   </div>
                 ))}
               </div>
@@ -477,13 +422,14 @@ export default function TeacherAttendancePage() {
           )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-            <button className="btn btn-outline" onClick={() => setViewStudent(null)}>Close</button>
+            <button className="btn btn-outline" onClick={() => { setViewStudent(null); setMonthlyAtt([]); }}>Close</button>
           </div>
         </Modal>
       )}
 
       <style jsx global>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
       `}</style>
     </AppLayout>
   );

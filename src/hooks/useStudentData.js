@@ -1,4 +1,3 @@
-// src/hooks/useStudentData.js
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -6,14 +5,19 @@ function computeFee(s) {
   if (!s) return null;
   
   const total = Number(s.totalFee) || 0;
-  const t1 = Number(s.term1) || 0;
-  const t2 = Number(s.term2) || 0;
-  const t3 = Number(s.term3) || 0;
-  const paid = t1 + t2 + t3;
+  const t1    = Number(s.term1)    || 0;
+  const t2    = Number(s.term2)    || 0;
+  const t3    = Number(s.term3)    || 0;
+  const paid  = t1 + t2 + t3;
 
-  let term1Due = 0, term2Due = 0, term3Due = 0;
-  if (total > 0) {
-    const base = Math.floor(total / 3);
+  // Compute term dues
+  let term1Due = Number(s.term1Due) || 0;
+  let term2Due = Number(s.term2Due) || 0;
+  let term3Due = Number(s.term3Due) || 0;
+
+  // Recompute if dues are zero but fee exists
+  if (total > 0 && term1Due === 0 && term2Due === 0 && term3Due === 0) {
+    const base  = Math.floor(total / 3);
     const extra = total - base * 3;
     term1Due = Math.max(0, (base + extra) - t1);
     term2Due = Math.max(0, base - t2);
@@ -35,35 +39,45 @@ function computeFee(s) {
 
 function getStoredUser() {
   if (typeof window === 'undefined') return null;
+  
   try {
-    // Check multiple possible storage keys
-    const keys = ['user', 'userData', 'currentUser', 'authUser'];
-    for (const key of keys) {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && (parsed.username || parsed.id || parsed.rollNo)) {
-          console.log('Found user in localStorage key:', key, parsed);
-          return parsed;
+    // Try erp_user first (your app's storage key)
+    const erpUser = localStorage.getItem('erp_user');
+    if (erpUser) {
+      const parsed = JSON.parse(erpUser);
+      if (parsed && (parsed.username || parsed.id || parsed.studentId)) {
+        console.log('📦 Found user in erp_user:', {
+          id: parsed.id,
+          username: parsed.username,
+          studentId: parsed.studentId,
+          rollNo: parsed.rollNo,
+          role: parsed.role,
+        });
+        return parsed;
+      }
+    }
+
+    // Fallback to other storage keys
+    const fallbackKeys = ['user', 'userData', 'currentUser', 'authUser'];
+    for (const key of fallbackKeys) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && (parsed.username || parsed.id || parsed.studentId)) {
+            console.log(`📦 Found user in ${key}`);
+            return parsed;
+          }
         }
+      } catch (e) {
+        continue;
       }
     }
     
-    // Also check sessionStorage
-    for (const key of keys) {
-      const raw = sessionStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && (parsed.username || parsed.id || parsed.rollNo)) {
-          console.log('Found user in sessionStorage key:', key, parsed);
-          return parsed;
-        }
-      }
-    }
-    
+    console.log('❌ No user found in any storage key');
     return null;
-  } catch (err) {
-    console.error('Error getting stored user:', err);
+  } catch (e) {
+    console.error('Error reading stored user:', e);
     return null;
   }
 }
@@ -79,43 +93,72 @@ export function useStudentProfile() {
 
     try {
       const user = getStoredUser();
-      console.log('Fetching profile for user:', user);
 
       if (!user) {
-        setError('No session found. Please log in again.');
+        console.log('❌ No user in storage');
+        setError('Session expired. Please log in again.');
         setLoading(false);
         return;
       }
 
+      // Build params with ALL identifiers
       const params = new URLSearchParams();
+      
+      if (user.studentId)   params.set('studentId', user.studentId);
+      if (user.username)    params.set('username',  user.username);
+      if (user.id)          params.set('userId',    user.id);
+      if (user._id)         params.set('userId',    user._id);
+      if (user.rollNo)      params.set('rollNo',    user.rollNo);
+      if (user.branch)      params.set('branch',    user.branch);
 
-      // Add all possible identifiers
-      if (user.username) params.set('username', user.username);
-      if (user.id) params.set('userId', user.id);
-      if (user.studentId) params.set('studentId', user.studentId);
-      if (user.rollNo) params.set('rollNo', user.rollNo);
-      if (user.roll_no) params.set('rollNo', user.roll_no);
+      console.log('🔍 Fetching profile with params:', Object.fromEntries(params));
 
-      console.log('Fetching from API with params:', params.toString());
+      const res = await fetch(`/api/students/profile?${params}`);
+      
+      // Handle non-JSON responses
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('❌ Non-JSON response:', text);
+        setError('Server returned invalid response');
+        setLoading(false);
+        return;
+      }
 
-      const res = await fetch(`/api/students/profile?${params.toString()}`);
       const data = await res.json();
 
-      console.log('API Response:', data);
+      console.log('📥 Profile response:', { 
+        success: data.success, 
+        hasData: !!data.data,
+        studentName: data.data?.name,
+        totalFee: data.data?.totalFee,
+        term1: data.data?.term1,
+        term2: data.data?.term2,
+        term3: data.data?.term3,
+        error: data.error 
+      });
 
       if (!res.ok || !data.success) {
-        setError(data.error || 'Failed to load fee data');
+        setError(data.error || 'Profile not found');
         setStudent(null);
         setLoading(false);
         return;
       }
 
       const computed = computeFee(data.data);
-      console.log('Computed student data:', computed);
+      console.log('✅ Computed fee data:', {
+        name: computed?.name,
+        totalFee: computed?.totalFee,
+        paidFee: computed?.paidFee,
+        term1: computed?.term1,
+        term2: computed?.term2,
+        term3: computed?.term3,
+      });
+      
       setStudent(computed);
       setError(null);
     } catch (err) {
-      console.error('Fetch error:', err);
+      console.error('❌ Profile fetch error:', err);
       setError('Network error. Please try again.');
       setStudent(null);
     }
@@ -123,49 +166,9 @@ export function useStudentProfile() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchProfile();
+  useEffect(() => { 
+    fetchProfile(); 
   }, [fetchProfile]);
 
   return { student, loading, error, refetch: fetchProfile };
-}
-
-// Additional hook for fetching any student by ID (for admin use)
-export function useStudentById(studentId) {
-  const [student, setStudent] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const fetchStudent = useCallback(async () => {
-    if (!studentId) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await fetch(`/api/students/${studentId}`);
-      const data = await res.json();
-
-      if (!res.ok || !data.success) {
-        setError(data.error || 'Failed to load student');
-        setStudent(null);
-      } else {
-        setStudent(computeFee(data.data));
-      }
-    } catch (err) {
-      setError('Network error');
-      setStudent(null);
-    }
-
-    setLoading(false);
-  }, [studentId]);
-
-  useEffect(() => {
-    fetchStudent();
-  }, [fetchStudent]);
-
-  return { student, loading, error, refetch: fetchStudent };
 }

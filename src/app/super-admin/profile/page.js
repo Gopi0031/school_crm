@@ -125,7 +125,7 @@ export default function SuperAdminProfile() {
             <div style={{ position:'absolute', top:-28, right:-28, width:130, height:130, borderRadius:'50%', background:'rgba(255,255,255,0.07)' }} />
             <div style={{ position:'absolute', top:16, right:20, background:'rgba(255,255,255,0.18)', backdropFilter:'blur(8px)', border:'1px solid rgba(255,255,255,0.25)', borderRadius:99, padding:'4px 14px', display:'flex', alignItems:'center', gap:5 }}>
               <Sparkles size={11} color="white" />
-              <span style={{ fontSize:'0.65rem', color:'white', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em' }}>Super Admin</span>
+              <span style={{ fontSize:'0.65rem', color:'white', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.08em' }}>Chairman</span>
             </div>
           </div>
           <div style={{ padding:'0 28px 26px' }}>
@@ -142,7 +142,7 @@ export default function SuperAdminProfile() {
               <div style={{ paddingBottom:4 }}>
                 <div style={{ fontWeight:900, fontSize:'1.25rem', color:'#0f172a' }}>{user?.name}</div>
                 <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:5 }}>
-                  <span style={{ padding:'3px 11px', borderRadius:99, background:'linear-gradient(135deg,#eef2ff,#e0e7ff)', color:'#4338ca', fontSize:'0.68rem', fontWeight:800 }}>Super Admin</span>
+                  <span style={{ padding:'3px 11px', borderRadius:99, background:'linear-gradient(135deg,#eef2ff,#e0e7ff)', color:'#4338ca', fontSize:'0.68rem', fontWeight:800 }}>Chairman</span>
                   {uploading && <span style={{ fontSize:'0.7rem', color:'#6366f1', fontWeight:700 }}>Uploading...</span>}
                 </div>
               </div>
@@ -164,7 +164,7 @@ export default function SuperAdminProfile() {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             {[
               { label:'Full Name', value:user?.name||'', icon:<User size={13} /> },
-              { label:'Role',      value:'Super Admin',  icon:<Shield size={13} /> },
+              { label:'Role',      value:'Chairman',  icon:<Shield size={13} /> },
             ].map(({ label, value, icon }) => (
               <FormField key={label} label={label}>
                 <div style={{ position:'relative' }}>

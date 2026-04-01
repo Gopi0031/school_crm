@@ -1,15 +1,19 @@
+// src/app/student/results/page.js
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { PageHeader, Modal } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { Eye, Trophy, TrendingUp, X } from 'lucide-react';
 
+// Helper to get ID safely
+const getId = (item) => item?._id || item?.id || '';
+
 export default function StudentResults() {
-  const { user }   = useAuth();
-  const [reports,  setReports]  = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [exam,     setExam]     = useState('');
+  const { user } = useAuth();
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [exam, setExam] = useState('');
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
@@ -34,9 +38,9 @@ export default function StudentResults() {
     return g;
   }, [reports]);
 
-  const avgPct    = reports.length ? Math.round(reports.reduce((a, r) => a + r.percentage, 0) / reports.length) : 0;
-  const pass      = reports.filter(r => r.status === 'Pass').length;
-  const topSubject = reports.length ? reports.reduce((a, b) => a.percentage > b.percentage ? a : b, reports[0]) : null;
+  const avgPct = reports.length ? Math.round(reports.reduce((a, r) => a + (r.percentage || 0), 0) / reports.length) : 0;
+  const pass = reports.filter(r => r.status === 'Pass').length;
+  const topSubject = reports.length ? reports.reduce((a, b) => (a.percentage || 0) > (b.percentage || 0) ? a : b, reports[0]) : null;
 
   const getColor = (pct) => pct >= 75 ? '#10b981' : pct >= 35 ? '#f59e0b' : '#ef4444';
 
@@ -47,9 +51,9 @@ export default function StudentResults() {
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 22 }} className="results-stats">
         {[
-          { l: 'Average %', v: `${avgPct}%`,                 c: '#4f46e5', icon: '📊' },
-          { l: 'Pass',      v: pass,                         c: '#10b981', icon: '✅' },
-          { l: 'Fail',      v: reports.length - pass,        c: '#ef4444', icon: '❌' },
+          { l: 'Average %', v: `${avgPct}%`, c: '#4f46e5', icon: '📊' },
+          { l: 'Pass', v: pass, c: '#10b981', icon: '✅' },
+          { l: 'Fail', v: reports.length - pass, c: '#ef4444', icon: '❌' },
           { l: 'Top Subject', v: topSubject?.subject || '—', c: '#f59e0b', icon: '🏆', small: true },
         ].map(({ l, v, c, icon, small }, i) => (
           <div key={l} className="card" style={{ textAlign: 'center', borderTop: `3px solid ${c}`, animation: 'fadeSlideUp 0.4s ease both', animationDelay: `${i * 70}ms` }}>
@@ -74,8 +78,12 @@ export default function StudentResults() {
             <div style={{ height: '100%', width: `${avgPct}%`, background: `linear-gradient(90deg, ${getColor(avgPct)}, ${getColor(avgPct)}aa)`, borderRadius: 99, transition: 'width 1s ease' }} />
           </div>
           <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: '0.72rem' }}>
-            {[['🟢 75%+ Distinction', '#10b981'], ['🟡 35–74% Pass', '#f59e0b'], ['🔴 Below 35% Fail', '#ef4444']].map(([l, c]) => (
-              <span key={l} style={{ color: c, fontWeight: 600 }}>{l}</span>
+            {[
+              { label: '🟢 75%+ Distinction', color: '#10b981' },
+              { label: '🟡 35–74% Pass', color: '#f59e0b' },
+              { label: '🔴 Below 35% Fail', color: '#ef4444' },
+            ].map(({ label, color }) => (
+              <span key={label} style={{ color, fontWeight: 600 }}>{label}</span>
             ))}
           </div>
         </div>
@@ -86,13 +94,17 @@ export default function StudentResults() {
         <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', flexShrink: 0 }}>Filter by Exam:</label>
         <select className="select" value={exam} onChange={e => setExam(e.target.value)} style={{ maxWidth: 200 }}>
           <option value="">All Exams</option>
-          {['Annual', 'Unit Test 1', 'Unit Test 2', 'Mid Term', 'Half Yearly'].map(e => <option key={e}>{e}</option>)}
+          {['Annual', 'Unit Test 1', 'Unit Test 2', 'Mid Term', 'Half Yearly'].map(e => (
+            <option key={e} value={e}>{e}</option>
+          ))}
         </select>
       </div>
 
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {[1,2].map(i => <div key={i} className="card" style={{ height: 180, background: 'linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s infinite' }} />)}
+          {[1, 2].map(i => (
+            <div key={`skeleton-${i}`} className="card" style={{ height: 180, background: 'linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.4s infinite' }} />
+          ))}
           <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
         </div>
       ) : reports.length === 0 ? (
@@ -101,10 +113,10 @@ export default function StudentResults() {
           <p style={{ color: '#94a3b8', fontWeight: 600 }}>No results found</p>
         </div>
       ) : Object.entries(grouped).map(([examName, reps], gi) => {
-        const examAvg  = Math.round(reps.reduce((a, r) => a + r.percentage, 0) / reps.length);
+        const examAvg = Math.round(reps.reduce((a, r) => a + (r.percentage || 0), 0) / reps.length);
         const examPass = reps.filter(r => r.status === 'Pass').length;
         return (
-          <div key={examName} className="card" style={{ marginBottom: 18, animation: 'fadeSlideUp 0.5s ease both', animationDelay: `${gi * 100}ms` }}>
+          <div key={`exam-${examName}-${gi}`} className="card" style={{ marginBottom: 18, animation: 'fadeSlideUp 0.5s ease both', animationDelay: `${gi * 100}ms` }}>
             {/* Exam Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 12, borderBottom: '2px solid #f1f5f9', flexWrap: 'wrap', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -123,45 +135,50 @@ export default function StudentResults() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                 <thead>
                   <tr style={{ background: '#f8fafc' }}>
-                    {['Subject', 'Marks', 'Total', 'Percentage', 'Result', ''].map(h => (
-                      <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                    {['Subject', 'Marks', 'Total', 'Percentage', 'Result', ''].map((h, hi) => (
+                      <th key={`header-${h || 'action'}-${hi}`} style={{ padding: '10px 14px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {reps.map((r, ri) => (
-                    <tr key={r._id} style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.15s', animation: 'fadeSlideUp 0.3s ease both', animationDelay: `${ri * 30}ms` }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#fafaff'}
-                      onMouseLeave={e => e.currentTarget.style.background = ''}
-                    >
-                      <td style={{ padding: '12px 14px', fontWeight: 600, fontSize: '0.875rem', color: '#1e293b' }}>{r.subject}</td>
-                      <td style={{ padding: '12px 14px', fontWeight: 900, color: '#7c3aed', fontSize: '1rem' }}>{r.marksObtained}</td>
-                      <td style={{ padding: '12px 14px', color: '#94a3b8', fontWeight: 500 }}>{r.totalMarks}</td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ flex: 1, maxWidth: 64, height: 7, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${r.percentage}%`, background: getColor(r.percentage), borderRadius: 99, transition: 'width 0.8s ease' }} />
+                  {reps.map((r, ri) => {
+                    const reportId = getId(r) || `${examName}-${r.subject}-${ri}`;
+                    return (
+                      <tr 
+                        key={reportId}
+                        style={{ borderBottom: '1px solid #f8fafc', transition: 'background 0.15s', animation: 'fadeSlideUp 0.3s ease both', animationDelay: `${ri * 30}ms` }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#fafaff'}
+                        onMouseLeave={e => e.currentTarget.style.background = ''}
+                      >
+                        <td style={{ padding: '12px 14px', fontWeight: 600, fontSize: '0.875rem', color: '#1e293b' }}>{r.subject}</td>
+                        <td style={{ padding: '12px 14px', fontWeight: 900, color: '#7c3aed', fontSize: '1rem' }}>{r.marksObtained}</td>
+                        <td style={{ padding: '12px 14px', color: '#94a3b8', fontWeight: 500 }}>{r.totalMarks}</td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, maxWidth: 64, height: 7, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${r.percentage || 0}%`, background: getColor(r.percentage || 0), borderRadius: 99, transition: 'width 0.8s ease' }} />
+                            </div>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: getColor(r.percentage || 0) }}>{r.percentage || 0}%</span>
                           </div>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: getColor(r.percentage) }}>{r.percentage}%</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <span style={{ padding: '4px 12px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, background: r.status === 'Pass' ? '#dcfce7' : '#fee2e2', color: r.status === 'Pass' ? '#16a34a' : '#dc2626' }}>
-                          {r.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <button
-                          onClick={() => setSelected(r)}
-                          style={{ width: 30, height: 30, borderRadius: 8, background: '#ede9fe', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#ddd6fe'}
-                          onMouseLeave={e => e.currentTarget.style.background = '#ede9fe'}
-                        >
-                          <Eye size={13} color="#7c3aed" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <span style={{ padding: '4px 12px', borderRadius: 20, fontSize: '0.72rem', fontWeight: 700, background: r.status === 'Pass' ? '#dcfce7' : '#fee2e2', color: r.status === 'Pass' ? '#16a34a' : '#dc2626' }}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <button
+                            onClick={() => setSelected(r)}
+                            style={{ width: 30, height: 30, borderRadius: 8, background: '#ede9fe', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s' }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#ddd6fe'}
+                            onMouseLeave={e => e.currentTarget.style.background = '#ede9fe'}
+                          >
+                            <Eye size={13} color="#7c3aed" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -185,8 +202,8 @@ export default function StudentResults() {
 
             {/* Big score */}
             <div style={{ textAlign: 'center', marginBottom: 20, padding: '20px 0', background: '#f8fafc', borderRadius: 14 }}>
-              <div style={{ fontSize: '3rem', fontWeight: 900, color: getColor(selected.percentage), lineHeight: 1 }}>
-                {selected.percentage}%
+              <div style={{ fontSize: '3rem', fontWeight: 900, color: getColor(selected.percentage || 0), lineHeight: 1 }}>
+                {selected.percentage || 0}%
               </div>
               <div style={{ fontSize: '1rem', color: '#64748b', marginTop: 4 }}>
                 {selected.marksObtained} / {selected.totalMarks} marks
@@ -194,13 +211,17 @@ export default function StudentResults() {
             </div>
 
             <div style={{ height: 12, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden', marginBottom: 20 }}>
-              <div style={{ height: '100%', width: `${selected.percentage}%`, background: getColor(selected.percentage), borderRadius: 99, transition: 'width 0.8s ease' }} />
+              <div style={{ height: '100%', width: `${selected.percentage || 0}%`, background: getColor(selected.percentage || 0), borderRadius: 99, transition: 'width 0.8s ease' }} />
             </div>
 
-            {[['Result', selected.status], ['Exam', selected.exam], ['Academic Year', selected.academicYear]].map(([l, v]) => (
-              <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f8fafc', fontSize: '0.875rem' }}>
-                <span style={{ color: '#64748b' }}>{l}</span>
-                <span style={{ fontWeight: 700, color: l === 'Result' ? (v === 'Pass' ? '#16a34a' : '#dc2626') : '#1e293b' }}>{v}</span>
+            {[
+              { label: 'Result', value: selected.status },
+              { label: 'Exam', value: selected.exam },
+              { label: 'Academic Year', value: selected.academicYear },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f8fafc', fontSize: '0.875rem' }}>
+                <span style={{ color: '#64748b' }}>{label}</span>
+                <span style={{ fontWeight: 700, color: label === 'Result' ? (value === 'Pass' ? '#16a34a' : '#dc2626') : '#1e293b' }}>{value || '—'}</span>
               </div>
             ))}
 

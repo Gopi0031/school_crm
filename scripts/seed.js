@@ -11,12 +11,14 @@ async function main() {
 
   await prisma.user.upsert({
     where:  { username: 'superadmin' },
-    update: {},
+    update: {
+      name: 'Chairman',   // ✅ updates name if user already exists
+    },
     create: {
       username:    'superadmin',
       password:    hash,
       role:        'super-admin',
-      name:        'Super Admin',
+      name:        'Chairman',   // ✅ new installs get Chairman too
       email:       'superadmin@school.com',
       isActive:    true,
     },

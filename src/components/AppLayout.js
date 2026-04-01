@@ -70,14 +70,15 @@ const NAV = {
    ROLE THEMING
 ═══════════════════════════════════════════════════════════════════════ */
 const ROLE_THEME = {
-  'super-admin': {
-    gradient:  'linear-gradient(160deg, #0f0c29 0%, #302b63 45%, #24243e 100%)',
-    accent:    '#818cf8',
-    glow:      'rgba(99,102,241,0.5)',
-    badge:     'linear-gradient(135deg,#6366f1,#8b5cf6)',
-    label:     'Super Admin',
-    dot:       '#818cf8',
-  },
+  // AFTER
+'super-admin': {
+  gradient:  'linear-gradient(160deg, #0f0c29 0%, #302b63 45%, #24243e 100%)',
+  accent:    '#818cf8',
+  glow:      'rgba(99,102,241,0.5)',
+  badge:     'linear-gradient(135deg,#6366f1,#8b5cf6)',
+  label:     'Chairman',   // ✅ CHANGED
+  dot:       '#818cf8',
+},
   'branch-admin': {
     gradient:  'linear-gradient(160deg, #0c1445 0%, #0a3d7e 45%, #0c5c9e 100%)',
     accent:    '#38bdf8',

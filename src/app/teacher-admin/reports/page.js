@@ -1,3 +1,4 @@
+// src/app/teacher-admin/reports/page.js
 'use client';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import AppLayout from '@/components/AppLayout';
@@ -180,10 +181,11 @@ export default function TeacherReports() {
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
   // ── Checkbox helpers ──────────────────────────────────────
-  const allPageChecked = paginated.length > 0 && paginated.every(r => checkedIds.includes(r._id));
+  const allPageChecked = paginated.length > 0 && paginated.every(r => checkedIds.includes(r._id || r.id));
   const toggleAll = () => {
-    if (allPageChecked) setCheckedIds(prev => prev.filter(id => !paginated.find(r => r._id === id)));
-    else setCheckedIds(prev => [...new Set([...prev, ...paginated.map(r => r._id)])]);
+    const pageIds = paginated.map(r => r._id || r.id);
+    if (allPageChecked) setCheckedIds(prev => prev.filter(id => !pageIds.includes(id)));
+    else setCheckedIds(prev => [...new Set([...prev, ...pageIds])]);
   };
   const toggleOne = (id) => {
     setCheckedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -204,7 +206,7 @@ export default function TeacherReports() {
   const exportSelectedPDF = () => {
     if (!checkedIds.length) return;
     setExportingSel(true);
-    const selectedReports = reports.filter(r => checkedIds.includes(r._id));
+    const selectedReports = reports.filter(r => checkedIds.includes(r._id || r.id));
     const html = buildReportPDF({ studentReports: selectedReports, title: 'Selected Reports', user, cls, section, exam });
     const win = window.open('', '_blank');
     win.document.write(html);
@@ -224,7 +226,7 @@ export default function TeacherReports() {
     setSaving(true);
     try {
       const method = editReport ? 'PUT' : 'POST';
-      const url    = editReport ? `/api/reports/${editReport._id}` : '/api/reports';
+      const url    = editReport ? `/api/reports/${editReport._id || editReport.id}` : '/api/reports';
       const r = await fetch(url, {
         method, headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, branch: user?.branch }),
@@ -238,8 +240,16 @@ export default function TeacherReports() {
 
   const openEdit = (r) => {
     setEditReport(r);
-    setForm({ studentId: r.studentId, subject: r.subject, marksObtained: r.marksObtained, totalMarks: r.totalMarks, exam: r.exam, academicYear: r.academicYear });
-    setError(''); setShowAdd(true);
+    setForm({ 
+      studentId: r.studentId, 
+      subject: r.subject, 
+      marksObtained: r.marksObtained, 
+      totalMarks: r.totalMarks, 
+      exam: r.exam, 
+      academicYear: r.academicYear 
+    });
+    setError(''); 
+    setShowAdd(true);
   };
 
   const deleteReport = async () => {
@@ -300,6 +310,9 @@ export default function TeacherReports() {
   const passCount = reports.filter(r => r.status === 'Pass').length;
   const failCount = reports.length - passCount;
   const avgPct    = reports.length ? Math.round(reports.reduce((s, r) => s + (r.percentage || 0), 0) / reports.length) : 0;
+
+  // Helper to get unique ID
+  const getId = (item) => item._id || item.id;
 
   return (
     <AppLayout requiredRole="teacher-admin">
@@ -373,15 +386,15 @@ export default function TeacherReports() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <select className="select" style={{ maxWidth: 150 }} value={cls} onChange={e => { setCls(e.target.value); setPage(1); }}>
             <option value="">All Classes</option>
-            {CLASSES.map(c => <option key={c}>{c}</option>)}
+            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <select className="select" style={{ maxWidth: 130 }} value={section} onChange={e => { setSection(e.target.value); setPage(1); }}>
             <option value="">All Sections</option>
-            {SECTIONS.map(s => <option key={s}>{s}</option>)}
+            {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <select className="select" style={{ maxWidth: 155 }} value={exam} onChange={e => { setExam(e.target.value); setPage(1); }}>
             <option value="">All Exams</option>
-            {EXAMS.map(e => <option key={e}>{e}</option>)}
+            {EXAMS.map(e => <option key={e} value={e}>{e}</option>)}
           </select>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: '#f8fafc', borderRadius: 9, padding: '7px 12px', border: '1.5px solid #e2e8f0', flex: 1, minWidth: 180, maxWidth: 300 }}>
             <Search size={14} color="#94a3b8" />
@@ -433,11 +446,12 @@ export default function TeacherReports() {
             ) : paginated.length === 0 ? (
               <tr><td colSpan={12}><EmptyState message="No reports found. Add reports or adjust filters." /></td></tr>
             ) : paginated.map((r, i) => {
-              const isChecked = checkedIds.includes(r._id);
+              const reportId = getId(r);
+              const isChecked = checkedIds.includes(reportId);
               return (
-                <tr key={r._id} style={{ borderBottom: '1px solid #f1f5f9', background: isChecked ? '#f5f3ff' : 'white', transition: 'background 0.15s' }}>
+                <tr key={reportId || `report-${i}`} style={{ borderBottom: '1px solid #f1f5f9', background: isChecked ? '#f5f3ff' : 'white', transition: 'background 0.15s' }}>
                   <td>
-                    <div onClick={() => toggleOne(r._id)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div onClick={() => toggleOne(reportId)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {isChecked ? <CheckSquare size={15} color="#4f46e5" /> : <Square size={15} color="#94a3b8" />}
                     </div>
                   </td>
@@ -469,7 +483,7 @@ export default function TeacherReports() {
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button title="View"   className="btn btn-primary" style={{ padding: '4px 7px', fontSize: '0.7rem' }} onClick={() => setSelected(r)}><Eye size={11} /></button>
                       <button title="Edit"   className="btn btn-outline" style={{ padding: '4px 7px', fontSize: '0.7rem' }} onClick={() => openEdit(r)}><Edit2 size={11} /></button>
-                      <button title="Delete" className="btn btn-danger"  style={{ padding: '4px 7px', fontSize: '0.7rem' }} onClick={() => setDeleteId(r._id)}><Trash2 size={11} /></button>
+                      <button title="Delete" className="btn btn-danger"  style={{ padding: '4px 7px', fontSize: '0.7rem' }} onClick={() => setDeleteId(reportId)}><Trash2 size={11} /></button>
                     </div>
                   </td>
                 </tr>
@@ -491,8 +505,10 @@ export default function TeacherReports() {
             onChange={e => setForm(p => ({ ...p, studentId: e.target.value }))}
             disabled={!!editReport}>
             <option value="">Select Student</option>
-            {students.map(s => (
-              <option key={s._id} value={s._id}>{s.name} — {s.rollNo} ({s.class}–{s.section})</option>
+            {students.map((s, index) => (
+              <option key={s._id || s.id || `student-${index}`} value={s._id || s.id}>
+                {s.name} — {s.rollNo} ({s.class}–{s.section})
+              </option>
             ))}
           </select>
         </F>
@@ -503,7 +519,7 @@ export default function TeacherReports() {
           </F>
           <F label="Exam Type">
             <select className="select" style={{ width: '100%' }} value={form.exam} onChange={e => setForm(p => ({ ...p, exam: e.target.value }))}>
-              {EXAMS.map(e => <option key={e}>{e}</option>)}
+              {EXAMS.map(e => <option key={e} value={e}>{e}</option>)}
             </select>
           </F>
           <F label="Marks Obtained" req>
@@ -571,7 +587,7 @@ export default function TeacherReports() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
           <F label="Default Exam Type">
             <select className="select" style={{ width: '100%' }} value={bulkExam} onChange={e => setBulkExam(e.target.value)}>
-              {EXAMS.map(e => <option key={e}>{e}</option>)}
+              {EXAMS.map(e => <option key={e} value={e}>{e}</option>)}
             </select>
           </F>
           <F label="Default Academic Year">
@@ -600,7 +616,7 @@ export default function TeacherReports() {
             {bulkResult.inserted > 0 && <p style={{ color: '#64748b', margin: '2px 0' }}>✅ Saved: {bulkResult.inserted}</p>}
             {bulkResult.skipped  > 0 && <p style={{ color: '#64748b', margin: '2px 0' }}>⚠️ Skipped: {bulkResult.skipped}</p>}
             {bulkResult.errors?.slice(0, 4).map((e, i) => (
-              <p key={i} style={{ color: '#ef4444', fontSize: '0.75rem', margin: '2px 0' }}>• Row {e.row}: {e.reason}</p>
+              <p key={`error-${i}`} style={{ color: '#ef4444', fontSize: '0.75rem', margin: '2px 0' }}>• Row {e.row}: {e.reason}</p>
             ))}
           </div>
         )}

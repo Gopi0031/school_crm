@@ -169,14 +169,14 @@ export default function SuperAdminReports() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Branch - FIXED: Use b.id || b._id || index as fallback */}
           <select className="select" style={{ maxWidth: 170 }} value={branch}
-            onChange={e => { setBranch(e.target.value); setPage(1); }}>
-            <option value="">All Branches</option>
-            {branches.map((b, index) => (
-              <option key={b.id || b._id || `branch-${index}`} value={b.name}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+  onChange={e => { setBranch(e.target.value); setPage(1); }}>
+  <option value="">All Branches</option>
+  {branches.map((b) => (
+    <option key={b.id || b._id} value={b.name}>
+      {b.name}
+    </option>
+  ))}
+</select>
 
           {/* Class */}
           <select className="select" style={{ maxWidth: 140 }} value={cls}

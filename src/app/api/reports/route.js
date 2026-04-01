@@ -12,26 +12,31 @@ export async function GET(req) {
     const academicYear = searchParams.get('academicYear');
     const search      = searchParams.get('search');
 
+    const where = {};
+    if (studentId)    where.studentId    = studentId;
+    if (cls)          where.class        = cls;
+    if (section)      where.section      = section;
+    if (branch)       where.branch       = branch;
+    if (exam)         where.exam         = exam;
+    if (academicYear) where.academicYear = academicYear;
+    
+    if (search) {
+      where.OR = [
+        { studentName: { contains: search, mode: 'insensitive' } },
+        { rollNo:      { contains: search, mode: 'insensitive' } },
+        { subject:     { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
     const reports = await prisma.report.findMany({
-      where: {
-        ...(studentId    && { studentId }),
-        ...(cls          && { class: cls }),
-        ...(section      && { section }),
-        ...(branch       && { branch }),
-        ...(exam         && { exam }),
-        ...(academicYear && { academicYear }),
-        ...(search && {
-          OR: [
-            { studentName: { contains: search, mode: 'insensitive' } },
-            { rollNo:      { contains: search, mode: 'insensitive' } },
-          ],
-        }),
-      },
-      orderBy: [{ class: 'asc' }, { rollNo: 'asc' }],
+      where,
+      orderBy: [{ class: 'asc' }, { rollNo: 'asc' }, { subject: 'asc' }],
     });
+
     return NextResponse.json({ success: true, data: reports });
   } catch (err) {
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    console.error('[GET /api/reports]', err);
+    return NextResponse.json({ success: false, error: 'Server error' }, { status: 500 });
   }
 }
 
@@ -39,44 +44,89 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    // Bulk array
+    // ── Bulk Insert (Array) ────────────────────────────────
     if (Array.isArray(body)) {
       const processed = body.map(r => {
-        const pct = r.totalMarks ? Math.round(r.marksObtained / r.totalMarks * 100) : 0;
-        return { ...r, percentage: pct, status: pct >= 35 ? 'Pass' : 'Fail' };
+        const pct = r.totalMarks > 0 ? Math.round((r.marksObtained / r.totalMarks) * 100) : 0;
+        return {
+          ...r,
+          percentage: pct,
+          status: pct >= 35 ? 'Pass' : 'Fail',
+          marksObtained: Number(r.marksObtained) || 0,
+          totalMarks: Number(r.totalMarks) || 100,
+        };
       });
 
-      let upserted = 0, modified = 0;
-      await Promise.all(processed.map(async r => {
-        const result = await prisma.report.upsert({
-          where:  { studentId_subject_exam: { studentId: r.studentId, subject: r.subject, exam: r.exam || 'Annual' } },
-          update: r,
-          create: r,
-        });
-        result ? upserted++ : modified++;
-      }));
-      return NextResponse.json({ success: true, upserted, modified });
+      let upserted = 0;
+      const results = await Promise.allSettled(
+        processed.map(async (r) => {
+          const result = await prisma.report.upsert({
+            where: {
+              studentId_subject_exam: {
+                studentId: r.studentId,
+                subject: r.subject,
+                exam: r.exam || 'Annual',
+              },
+            },
+            update: {
+              marksObtained: r.marksObtained,
+              totalMarks: r.totalMarks,
+              percentage: r.percentage,
+              status: r.status,
+              academicYear: r.academicYear,
+              updatedAt: new Date(),
+            },
+            create: r,
+          });
+          if (result) upserted++;
+          return result;
+        })
+      );
+
+      return NextResponse.json({
+        success: true,
+        upserted,
+        total: processed.length,
+      });
     }
 
-    // Single record
-    const pct = body.totalMarks ? Math.round(body.marksObtained / body.totalMarks * 100) : 0;
-    body.percentage = pct;
-    body.status     = pct >= 35 ? 'Pass' : 'Fail';
+    // ── Single Insert ──────────────────────────────────────
+    const marksObtained = Number(body.marksObtained) || 0;
+    const totalMarks = Number(body.totalMarks) || 100;
+    const pct = totalMarks > 0 ? Math.round((marksObtained / totalMarks) * 100) : 0;
 
+    const reportData = {
+      ...body,
+      marksObtained,
+      totalMarks,
+      percentage: pct,
+      status: pct >= 35 ? 'Pass' : 'Fail',
+    };
+
+    // Auto-fill student details if missing
     if (body.studentId && (!body.studentName || !body.rollNo)) {
-      const student = await prisma.student.findUnique({ where: { id: body.studentId } });
+      const student = await prisma.student.findUnique({
+        where: { id: body.studentId },
+        select: { name: true, rollNo: true, class: true, section: true, branch: true },
+      });
+
       if (student) {
-        body.studentName = body.studentName || student.name;
-        body.rollNo      = body.rollNo      || student.rollNo;
-        body.class       = body.class       || student.class;
-        body.section     = body.section     || student.section;
-        body.branch      = body.branch      || student.branch;
+        reportData.studentName = reportData.studentName || student.name;
+        reportData.rollNo = reportData.rollNo || student.rollNo;
+        reportData.class = reportData.class || student.class;
+        reportData.section = reportData.section || student.section;
+        reportData.branch = reportData.branch || student.branch;
       }
     }
 
-    const report = await prisma.report.create({ data: body });
+    const report = await prisma.report.create({ data: reportData });
+
     return NextResponse.json({ success: true, data: report }, { status: 201 });
   } catch (err) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    console.error('[POST /api/reports]', err);
+    return NextResponse.json(
+      { success: false, error: err.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }

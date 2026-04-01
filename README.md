@@ -20,14 +20,7 @@ Populates MongoDB with 40 students, 20 teachers, 15 staff, branches, events, hol
 
 ---
 
-## Default Login Credentials
 
-| Role         | Username    | Password  |
-|--------------|-------------|-----------|
-| Super Admin  | superadmin  | admin123  |
-| Branch Admin | branch1     | branch123 |
-| Teacher      | teacher1    | teach123  |
-| Student      | student001  | stud123   |
 
 ---
 

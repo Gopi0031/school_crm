@@ -9,7 +9,7 @@ export async function GET() {
     const hashed = await bcrypt.hash(newPassword, 12);
 
     const result = await prisma.user.update({
-      where: { username: 'superadmin' },
+      where: { username: 'mainadmin' },
       data:  { password: hashed },
     });
 

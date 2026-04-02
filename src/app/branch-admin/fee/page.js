@@ -376,13 +376,7 @@ export default function BranchAdminFee() {
       )}
 
       <PageHeader title="Fee Management" subtitle={user?.branch}>
-        <button
-          className="btn btn-outline"
-          style={{ color: '#6366f1', borderColor: '#6366f1' }}
-          onClick={() => setShowBulkFee(true)}
-        >
-          <IndianRupee size={14} /> Bulk Set Fee
-        </button>
+
         
         <button
           className="btn btn-outline"

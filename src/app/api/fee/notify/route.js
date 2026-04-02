@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { sendWhatsAppMessage, generateFeeMessage } from '@/lib/whatsapp'; // ✅ Changed
+import { sendWhatsAppMessage, generateFeeMessage } from '@/lib/twilio';
 
 export async function POST(req) {
   try {
@@ -60,7 +60,7 @@ export async function POST(req) {
             dueFee: total - (Number(student.paidFee) || 0),
             message: message,
             status: 'sent',
-            twilioSid: '',
+            twilioSid: result.sid || '',
             error: '',
             sentAt: new Date(),
           },
@@ -72,6 +72,7 @@ export async function POST(req) {
       return NextResponse.json({
         success: true,
         message: 'WhatsApp notification sent successfully',
+        sid: result.sid,
       });
     } else {
       return NextResponse.json({

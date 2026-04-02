@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { sendWhatsAppMessage, generateFeeMessage } from '@/lib/whatsapp'; // ✅ Changed
+import { sendWhatsAppMessage, generateFeeMessage } from '@/lib/twilio';
 
 export async function POST(req) {
   try {
@@ -113,6 +113,7 @@ export async function POST(req) {
           paidFee: paid,
           dueFee: due,
           status: 'sent',
+          sid: result.sid,
           message: message,
         });
 
@@ -133,7 +134,7 @@ export async function POST(req) {
               dueFee: due,
               message: message,
               status: 'sent',
-              twilioSid: '',
+              twilioSid: result.sid || '',
               error: '',
               sentAt: new Date(),
             },
@@ -185,8 +186,8 @@ export async function POST(req) {
         }
       }
 
-      // Rate limiting: 2 seconds between messages
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
 
     const summary = `✅ Sent: ${sentCount} | ❌ Failed: ${failedCount} | ⏭️ Skipped: ${skippedCount} | 📊 Total: ${students.length}`;
@@ -207,6 +208,35 @@ export async function POST(req) {
 
   } catch (err) {
     console.error('❌ Notify All Error:', err);
+    return NextResponse.json({
+      success: false,
+      error: err.message,
+    }, { status: 500 });
+  }
+}
+
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const branch = searchParams.get('branch');
+    const limit = parseInt(searchParams.get('limit')) || 100;
+
+    const where = {};
+    if (branch) where.branch = branch;
+
+    const notifications = await prisma.feeNotification.findMany({
+      where,
+      orderBy: { sentAt: 'desc' },
+      take: limit,
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: notifications,
+    });
+
+  } catch (err) {
+    console.error('❌ Get notifications error:', err);
     return NextResponse.json({
       success: false,
       error: err.message,

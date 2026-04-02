@@ -1,23 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// ── Class progression map ─────────────────────────────────────────────────
 const NEXT_CLASS = {
-  'Class 1':  'Class 2',
-  'Class 2':  'Class 3',
-  'Class 3':  'Class 4',
-  'Class 4':  'Class 5',
-  'Class 5':  'Class 6',
-  'Class 6':  'Class 7',
-  'Class 7':  'Class 8',
-  'Class 8':  'Class 9',
-  'Class 9':  'Class 10',
-  'Class 10': 'Class 11',
-  'Class 11': 'Class 12',
-  // Class 12 → graduates (no next class)
+  'Class 1':  'Class 2', 'Class 2':  'Class 3', 'Class 3':  'Class 4',
+  'Class 4':  'Class 5', 'Class 5':  'Class 6', 'Class 6':  'Class 7',
+  'Class 7':  'Class 8', 'Class 8':  'Class 9', 'Class 9':  'Class 10',
+  'Class 10': 'Class 11', 'Class 11': 'Class 12', 'Class 12': null,
 };
 
-// ── Academic year helper: "2025-26" → "2026-27" ──────────────────────────
 function getNextAcademicYear(current) {
   const match = current?.match(/^(\d{4})-(\d{2,4})$/);
   if (!match) {
@@ -25,191 +15,202 @@ function getNextAcademicYear(current) {
     return `${year}-${String(year + 1).slice(-2)}`;
   }
   const startYear = parseInt(match[1]) + 1;
-  const endShort  = String(startYear + 1).slice(-2);
-  return `${startYear}-${endShort}`;
+  return `${startYear}-${String(startYear + 1).slice(-2)}`;
 }
 
-// ── Split totalFee into 3 term dues ───────────────────────────────────────
-// Returns { term1Due, term2Due, term3Due }
-// Extra rupee (from remainder) goes to term1
-function splitTermDues(totalFee) {
-  const total = Number(totalFee) || 0;
-  if (total === 0) return { term1Due: 0, term2Due: 0, term3Due: 0 };
-  const base  = Math.floor(total / 3);
-  const extra = total - base * 3;  // 0, 1, or 2
-  return {
-    term1Due: base + extra,  // e.g. ₹11,667 (gets the extra rupee)
-    term2Due: base,          // e.g. ₹11,667
-    term3Due: base,          // e.g. ₹11,666
-  };
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// GET — Dry-run preview (no DB changes)
-// ─────────────────────────────────────────────────────────────────────────
+// GET Preview
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-    const branch      = searchParams.get('branch');
+    const branch = searchParams.get('branch');
     const currentYear = searchParams.get('academicYear');
 
-    if (!currentYear)
-      return NextResponse.json({ error: 'academicYear required' }, { status: 400 });
-
-    const where = { academicYear: currentYear, status: 'Active' };
-    if (branch) where.branch = branch;
-
-    const students = await prisma.student.findMany({
-      where,
-      select: {
-        id: true, name: true, rollNo: true,
-        class: true, section: true, branch: true,
-        academicYear: true, totalFee: true,
-      },
-    });
-
-    const nextYear = getNextAcademicYear(currentYear);
-
-    const preview = students.map(s => {
-      const nextClass = NEXT_CLASS[s.class] || null;
-      const { term1Due, term2Due, term3Due } = splitTermDues(s.totalFee);
-      return {
-        id:           s.id,
-        name:         s.name,
-        rollNo:       s.rollNo,
-        branch:       s.branch,
-        currentClass: s.class,
-        section:      s.section,
-        nextClass,
-        willGraduate: !nextClass,
-        status:       nextClass ? 'Active' : 'Passed',
-        currentYear,
-        nextYear,
-        totalFee:     Number(s.totalFee) || 0,
-        // What term dues will be reset to after rollover
-        term1Due, term2Due, term3Due,
-      };
-    });
-
-    return NextResponse.json({
-      success:      true,
-      currentYear,
-      nextYear,
-      total:        preview.length,
-      willPromote:  preview.filter(p => p.nextClass).length,
-      willGraduate: preview.filter(p => !p.nextClass).length,
-      data:         preview,
-    });
-  } catch (err) {
-    console.error('GET rollover preview error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// POST — Execute rollover
-// ─────────────────────────────────────────────────────────────────────────
-export async function POST(req) {
-  try {
-    const { branch, currentYear, confirm } = await req.json();
-
-    if (!currentYear)
-      return NextResponse.json({ error: 'currentYear required' }, { status: 400 });
-    if (!confirm)
-      return NextResponse.json(
-        { error: 'Pass confirm: true to execute rollover' },
-        { status: 400 }
-      );
+    if (!currentYear) {
+      return NextResponse.json({ success: false, error: 'academicYear required' }, { status: 400 });
+    }
 
     const where = { academicYear: currentYear, status: 'Active' };
     if (branch) where.branch = branch;
 
     const students = await prisma.student.findMany({ where });
-    const nextYear  = getNextAcademicYear(currentYear);
+    const nextYear = getNextAcademicYear(currentYear);
 
-    let promoted  = 0;
-    let graduated = 0;
-    let errors    = 0;
+    const feeStructures = await prisma.feeStructure.findMany({
+      where: { academicYear: nextYear, ...(branch && { branch }), isActive: true },
+    });
+
+    const preview = students.map(s => {
+      const nextClass = NEXT_CLASS[s.class] || null;
+      const feeStructure = feeStructures.find(f => f.class === nextClass);
+      
+      return {
+        id: s.id, name: s.name, rollNo: s.rollNo, branch: s.branch,
+        currentClass: s.class, section: s.section, nextClass,
+        willGraduate: !nextClass,
+        status: nextClass ? 'Active' : 'Passed Out',
+        currentYear, nextYear,
+        currentFee: Number(s.totalFee) || 0,
+        newFee: feeStructure ? Number(feeStructure.totalFee) : 0,
+        feeChange: feeStructure ? Number(feeStructure.totalFee) - (Number(s.totalFee) || 0) : 0,
+        hasFeeStructure: !!feeStructure,
+      };
+    });
+
+    return NextResponse.json({
+      success: true, currentYear, nextYear,
+      total: preview.length,
+      willPromote: preview.filter(p => p.nextClass).length,
+      willGraduate: preview.filter(p => !p.nextClass).length,
+      missingFeeStructures: preview.filter(p => p.nextClass && !p.hasFeeStructure).length,
+      data: preview,
+    });
+  } catch (err) {
+    console.error('[GET rollover preview]', err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+// POST Execute
+export async function POST(req) {
+  try {
+    const { branch, currentYear, confirm, detainedStudents = [] } = await req.json();
+
+    if (!currentYear || !confirm) {
+      return NextResponse.json({ success: false, error: 'currentYear and confirm required' }, { status: 400 });
+    }
+
+    const where = { academicYear: currentYear, status: 'Active' };
+    if (branch) where.branch = branch;
+
+    const students = await prisma.student.findMany({ where });
+    const nextYear = getNextAcademicYear(currentYear);
+
+    const feeStructures = await prisma.feeStructure.findMany({
+      where: { academicYear: nextYear, ...(branch && { branch }), isActive: true },
+    });
+
+    let promoted = 0, graduated = 0, detained = 0, errors = 0;
     const failedStudents = [];
+    const missingFeeStructures = new Set();
 
     for (const student of students) {
-      const nextClass = NEXT_CLASS[student.class];
+      const isDetained = detainedStudents.includes(student.id);
+      const nextClass = isDetained ? student.class : NEXT_CLASS[student.class];
 
       try {
         if (nextClass) {
-          // ── Promote: next class + reset fee for new academic year ──
-          const { term1Due, term2Due, term3Due } = splitTermDues(student.totalFee);
+          const feeStructure = feeStructures.find(f => f.class === nextClass);
+          
+          if (!feeStructure) {
+            missingFeeStructures.add(nextClass);
+            console.warn(`No fee structure for ${nextClass} in ${nextYear}`);
+          }
+
+          const newTotalFee = feeStructure ? Number(feeStructure.totalFee) : Number(student.totalFee) || 0;
+          const term1Fee = feeStructure ? Number(feeStructure.term1Fee) : 0;
+          const term2Fee = feeStructure ? Number(feeStructure.term2Fee) : 0;
+          const term3Fee = feeStructure ? Number(feeStructure.term3Fee) : 0;
+
+          let term1Due, term2Due, term3Due;
+          if (feeStructure && term1Fee > 0) {
+            term1Due = term1Fee;
+            term2Due = term2Fee;
+            term3Due = term3Fee;
+          } else {
+            const base = Math.floor(newTotalFee / 3);
+            const extra = newTotalFee - base * 3;
+            term1Due = base + extra;
+            term2Due = base;
+            term3Due = base;
+          }
 
           await prisma.student.update({
             where: { id: student.id },
             data: {
-              class:        nextClass,
-              academicYear: nextYear,
-              // ── Fee reset ──────────────────────────────────────────
-              paidFee:  0,
-              term1:    0,
-              term2:    0,
-              term3:    0,
-              // Re-split dues from existing totalFee
-              // Admin can update totalFee separately per student / bulk
-              term1Due,
-              term2Due,
-              term3Due,
+              class: nextClass, academicYear: nextYear,
+              totalFee: newTotalFee, paidFee: 0,
+              term1: 0, term2: 0, term3: 0,
+              term1Due, term2Due, term3Due,
+              presentDays: 0, absentDays: 0,
+              totalWorkingDays: 0, todayAttendance: '',
             },
           });
 
-          // Also sync the linked User's class
           if (student.userId) {
             await prisma.user.update({
               where: { id: student.userId },
-              data:  { class: nextClass },
-            }).catch(e => {
-              console.warn(`User sync skipped for student ${student.id}:`, e.message);
-            });
+              data: { class: nextClass },
+            }).catch(e => console.warn(`User sync skipped for ${student.id}`));
           }
 
-          promoted++;
+          await prisma.promotionHistory.create({
+            data: {
+              studentId: student.id, studentName: student.name,
+              rollNo: student.rollNo, fromClass: student.class,
+              toClass: nextClass, fromAcademicYear: currentYear,
+              toAcademicYear: nextYear, fromSection: student.section,
+              toSection: student.section,
+              promotionType: isDetained ? 'detained' : 'promoted',
+              branch: student.branch, branchId: student.branchId,
+              oldFee: Number(student.totalFee) || 0,
+              newFee: newTotalFee, promotedBy: 'System',
+            },
+          });
+
+          isDetained ? detained++ : promoted++;
         } else {
-          // ── Class 12 → Graduate ────────────────────────────────────
           await prisma.student.update({
             where: { id: student.id },
-            data: {
-              status:       'Passed',
-              academicYear: nextYear,
-              // Don't reset fee for graduates — keep as record
-            },
+            data: { status: 'Passed Out', academicYear: nextYear },
           });
 
-          // Deactivate linked User login
           if (student.userId) {
             await prisma.user.update({
               where: { id: student.userId },
-              data:  { isActive: false },
-            }).catch(e => {
-              console.warn(`User deactivate skipped for student ${student.id}:`, e.message);
-            });
+              data: { isActive: false },
+            }).catch(e => console.warn(`User deactivate skipped`));
           }
+
+          await prisma.promotionHistory.create({
+            data: {
+              studentId: student.id, studentName: student.name,
+              rollNo: student.rollNo, fromClass: student.class,
+              toClass: 'Passed Out', fromAcademicYear: currentYear,
+              toAcademicYear: nextYear, fromSection: student.section,
+              toSection: '', promotionType: 'passed_out',
+              branch: student.branch, branchId: student.branchId,
+              oldFee: Number(student.totalFee) || 0, newFee: 0,
+              promotedBy: 'System',
+            },
+          });
 
           graduated++;
         }
       } catch (err) {
-        console.error(`Rollover failed for student ${student.id} (${student.name}):`, err.message);
+        console.error(`Rollover failed for ${student.id}:`, err);
         failedStudents.push({ id: student.id, name: student.name, error: err.message });
         errors++;
       }
     }
 
+    const teacherResult = await prisma.teacher.updateMany({
+      where: { ...(branch && { branch }), status: 'Active' },
+      data: { academicYear: nextYear, presentDays: 0, absentDays: 0, totalDays: 0 },
+    });
+
     return NextResponse.json({
-      success:   true,
-      message:   `Rollover complete: ${currentYear} → ${nextYear}`,
-      promoted,
-      graduated,
-      errors,
-      nextYear,
+      success: true,
+      message: `Rollover complete: ${currentYear} → ${nextYear}`,
+      promoted, detained, graduated,
+      teachersUpdated: teacherResult.count,
+      errors, nextYear,
+      warnings: missingFeeStructures.size > 0 
+        ? `Missing fee structures for: ${Array.from(missingFeeStructures).join(', ')}`
+        : null,
       ...(errors > 0 && { failedStudents }),
     });
   } catch (err) {
-    console.error('POST rollover error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[POST rollover]', err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }

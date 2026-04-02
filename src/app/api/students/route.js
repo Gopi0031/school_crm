@@ -13,30 +13,68 @@ export async function GET(req) {
     const academicYear = searchParams.get('academicYear');
     const branchId     = searchParams.get('branchId');
 
+    // ✅ Build where clause properly
+    const where = {};
+
+    if (branch) {
+      where.branch = branch;
+    }
+
+    if (cls) {
+      where.class = { equals: cls, mode: 'insensitive' };
+    }
+
+    if (section) {
+      where.section = { equals: section, mode: 'insensitive' };
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (academicYear) {
+      where.academicYear = academicYear;
+    }
+
+    if (branchId) {
+      where.branchId = branchId;
+    }
+
+    if (search) {
+      where.OR = [
+        { name:       { contains: search, mode: 'insensitive' } },
+        { rollNo:     { contains: search, mode: 'insensitive' } },
+        { email:      { contains: search, mode: 'insensitive' } },
+        { phone:      { contains: search, mode: 'insensitive' } },
+        { parentName: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    console.log('📋 GET /api/students - where:', JSON.stringify(where));
+
     const students = await prisma.student.findMany({
-      where: {
-        ...(branch       && { branch }),
-        ...(cls          && { class: { equals: cls, mode: 'insensitive' } }),
-        ...(section      && { section: { equals: section, mode: 'insensitive' } }),
-        ...(status       && { status }),
-        ...(academicYear && { academicYear }),
-        ...(branchId     && { branchId }),
-        ...(search && {
-          OR: [
-            { name:       { contains: search, mode: 'insensitive' } },
-            { rollNo:     { contains: search, mode: 'insensitive' } },
-            { email:      { contains: search, mode: 'insensitive' } },
-            { phone:      { contains: search, mode: 'insensitive' } },
-            { parentName: { contains: search, mode: 'insensitive' } },
-          ],
-        }),
-      },
+      where,
       orderBy: { rollNo: 'asc' },
     });
 
-    return NextResponse.json({ success: true, data: students });
+    // ✅ Normalize fee values to proper integers
+    const normalizedStudents = students.map(s => ({
+      ...s,
+      totalFee:  Math.round(Number(s.totalFee)  || 0),
+      paidFee:   Math.round(Number(s.paidFee)   || 0),
+      term1:     Math.round(Number(s.term1)     || 0),
+      term2:     Math.round(Number(s.term2)     || 0),
+      term3:     Math.round(Number(s.term3)     || 0),
+      term1Due:  Math.round(Number(s.term1Due)  || 0),
+      term2Due:  Math.round(Number(s.term2Due)  || 0),
+      term3Due:  Math.round(Number(s.term3Due)  || 0),
+    }));
+
+    console.log('📋 Found', normalizedStudents.length, 'students');
+
+    return NextResponse.json({ success: true, data: normalizedStudents });
   } catch (err) {
-    console.error('GET students error:', err);
+    console.error('❌ GET students error:', err);
     return NextResponse.json({ success: false, error: 'Server error' }, { status: 500 });
   }
 }
@@ -53,7 +91,9 @@ export async function POST(req) {
 
     console.log('📝 Creating student:', { name, rollNo, username, branch });
 
-    // Validation
+    // ═══════════════════════════════════════════════════════
+    // VALIDATION
+    // ═══════════════════════════════════════════════════════
     if (!name || !rollNo || !cls || !section) {
       return NextResponse.json({ 
         success: false, 
@@ -92,68 +132,98 @@ export async function POST(req) {
       }
     }
 
-    // Calculate term dues
-    const totalFeeNum = Number(totalFee) || 0;
-    const base  = totalFeeNum > 0 ? Math.floor(totalFeeNum / 3) : 0;
-    const extra = totalFeeNum > 0 ? totalFeeNum - base * 3 : 0;
+    // ═══════════════════════════════════════════════════════
+    // CALCULATE FEES (with proper rounding)
+    // ═══════════════════════════════════════════════════════
+    const totalFeeNum = Math.round(Number(totalFee) || 0);  // ✅ Round to integer
+    
+    // Calculate term dues with proper integer math
+    let term1Due = 0;
+    let term2Due = 0;
+    let term3Due = 0;
+    
+    if (totalFeeNum > 0) {
+      const base = Math.floor(totalFeeNum / 3);
+      const remainder = totalFeeNum - (base * 3);
+      
+      // Distribute remainder to term1
+      term1Due = base + remainder;
+      term2Due = base;
+      term3Due = base;
+      
+      // Verify sum equals total
+      console.log('📊 Fee split:', { 
+        total: totalFeeNum, 
+        term1Due, term2Due, term3Due, 
+        sum: term1Due + term2Due + term3Due 
+      });
+    }
 
-    // Create Student FIRST
+    // ═══════════════════════════════════════════════════════
+    // CREATE STUDENT
+    // ═══════════════════════════════════════════════════════
     const student = await prisma.student.create({
       data: {
         name, 
         rollNo, 
         class: cls, 
         section,
-        gender: gender || '', 
-        bloodGroup: bloodGroup || '',
-        caste: caste || '', 
-        aadhaar: aadhaar || '',
-        address: address || '', 
-        parentName: parentName || '',
-        phone: phone || '', 
-        email: email || '',
-        branch: branch || '', 
-        branchId: branchId || '',
-        academicYear: academicYear || '2025-26',
+        gender:        gender        || '', 
+        bloodGroup:    bloodGroup    || '',
+        caste:         caste         || '', 
+        aadhaar:       aadhaar       || '',
+        address:       address       || '', 
+        parentName:    parentName    || '',
+        phone:         phone         || '', 
+        email:         email         || '',
+        branch:        branch        || '', 
+        branchId:      branchId      || '',
+        academicYear:  academicYear  || '2025-26',
         yearOfJoining: yearOfJoining || '',
         dateOfJoining: dateOfJoining || new Date().toISOString().split('T')[0],
-        totalFee: totalFeeNum,
-        username: finalUsername,  // ✅ Store username
-        userId: '',               // Will update after creating user
-        status: 'Active',
-        paidFee: 0,
-        term1: 0, 
-        term2: 0, 
-        term3: 0,
-        term1Due: base + extra,
-        term2Due: base,
-        term3Due: base,
+        totalFee:      totalFeeNum,        // ✅ Rounded integer
+        username:      finalUsername,
+        userId:        '',
+        status:        'Active',
+        paidFee:       0,
+        term1:         0, 
+        term2:         0, 
+        term3:         0,
+        term1Due,                          // ✅ Proper integer
+        term2Due,                          // ✅ Proper integer
+        term3Due,                          // ✅ Proper integer
+        presentDays:      0,
+        absentDays:       0,
+        totalWorkingDays: 0,
+        todayAttendance:  '',
       },
     });
 
-    console.log('✅ Student created:', student.id, student.name);
+    console.log('✅ Student created:', student.id, student.name, 'Fee:', student.totalFee);
 
+    // ═══════════════════════════════════════════════════════
+    // CREATE USER (if credentials provided)
+    // ═══════════════════════════════════════════════════════
     let userId = null;
 
-    // Create User if credentials provided
     if (finalUsername && password) {
       const hashed = await bcrypt.hash(password, 10);
       
       const userRecord = await prisma.user.create({
         data: {
-          username: finalUsername, 
-          password: hashed, 
-          role: 'student',
+          username:  finalUsername, 
+          password:  hashed, 
+          role:      'student',
           name, 
-          email: email || '', 
-          phone: phone || '',
-          branch: branch || '', 
-          branchId: branchId || '',
-          class: cls, 
+          email:     email    || '', 
+          phone:     phone    || '',
+          branch:    branch   || '', 
+          branchId:  branchId || '',
+          class:     cls, 
           section, 
           rollNo,
-          studentId: student.id,  // ✅ Link to student
-          isActive: true,
+          studentId: student.id,
+          isActive:  true,
         },
       });
       
@@ -176,7 +246,15 @@ export async function POST(req) {
 
     return NextResponse.json({ 
       success: true, 
-      data: updatedStudent 
+      data: {
+        ...updatedStudent,
+        // ✅ Ensure response has proper integers
+        totalFee:  Math.round(Number(updatedStudent.totalFee)  || 0),
+        paidFee:   Math.round(Number(updatedStudent.paidFee)   || 0),
+        term1Due:  Math.round(Number(updatedStudent.term1Due)  || 0),
+        term2Due:  Math.round(Number(updatedStudent.term2Due)  || 0),
+        term3Due:  Math.round(Number(updatedStudent.term3Due)  || 0),
+      }
     }, { status: 201 });
     
   } catch (err) {

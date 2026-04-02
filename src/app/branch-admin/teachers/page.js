@@ -145,7 +145,7 @@ export default function BranchAdminTeachers() {
   try {
     const payload = { ...form, branch: user?.branch, branchId: user?.branchId };
     const method  = editTeacher ? 'PUT' : 'POST';
-    const url     = editTeacher ? `/api/teachers/${editTeacher._id}` : '/api/teachers';
+    const url = editTeacher ? `/api/teachers/${editTeacher.id}` : '/api/teachers';
     
     console.log('[Save Teacher] Payload:', { 
       method, 
@@ -346,10 +346,9 @@ const openEdit = (t) => {
     <td colSpan={10}><EmptyState message="No teachers found. Try adjusting filters." /></td>
   </tr>
 ) : paginated.map((t, i) => (
-  <tr key={t.id || t._id || `row-${i}`}>   {/* ✅ use t.id since schema now uses ObjectId */}
-
-                  <td style={{ color:'#94a3b8', fontSize:'0.78rem' }}>{(page-1)*perPage+i+1}</td>
-                  <td><Badge>{t.status || 'Active'}</Badge></td>
+ <tr key={t.id || `row-${i}`}>{/* ✅ use t.id since schema now uses ObjectId */}
+  <td style={{ color:'#94a3b8', fontSize:'0.78rem' }}>{(page-1)*perPage+i+1}</td>
+                    <td><Badge>{t.status || 'Active'}</Badge></td>
                   <td style={{ fontWeight:700, color:'#4f46e5', fontSize:'0.8rem' }}>{t.employeeId}</td>
                 <td>
                   <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.84rem' }}>{t.name}</div>
@@ -372,7 +371,7 @@ const openEdit = (t) => {
                   <div style={{ display:'flex', gap:5 }}>
                     <button title="View"   className="btn btn-primary" style={{ padding:'4px 9px', fontSize:'0.72rem' }} onClick={() => { setSelected(t); setSelectedTab('details'); }}><Eye size={12} /></button>
                     <button title="Edit"   className="btn btn-outline" style={{ padding:'4px 9px', fontSize:'0.72rem' }} onClick={() => openEdit(t)}><Edit2 size={12} /></button>
-                    <button title="Delete" className="btn btn-danger"  style={{ padding:'4px 9px', fontSize:'0.72rem' }} onClick={() => setDeleteId(t._id)}><Trash2 size={12} /></button>
+                    <button title="Delete" className="btn btn-danger"  style={{ padding:'4px 9px', fontSize:'0.72rem' }} onClick={() => setDeleteId(t.id)}><Trash2 size={12} /></button>
                   </div>
                 </td>
               </tr>

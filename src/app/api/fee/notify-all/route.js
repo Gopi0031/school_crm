@@ -1,84 +1,215 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import axios from 'axios';
-
-// ✅ Sends real WhatsApp message via Meta Cloud API
-async function sendWhatsApp(phone, message) {
-  const url = `https://graph.facebook.com/v19.0/${process.env.WA_PHONE_NUMBER_ID}/messages`;
-  await axios.post(url, {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to: `91${phone}`,           // India prefix
-    type: 'text',
-    text: { preview_url: false, body: message },
-  }, {
-    headers: {
-      Authorization: `Bearer ${process.env.WA_ACCESS_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-  });
-}
+import { sendWhatsAppMessage, generateFeeMessage } from '@/lib/whatsapp'; // ✅ Changed
 
 export async function POST(req) {
   try {
-    const { branch, cls, section } = await req.json();
+    const body = await req.json();
+    const { branch, cls, section, academicYear, notifyType = 'all' } = body;
 
-    const students = await prisma.student.findMany({
-      where: {
-        ...(branch  && { branch }),
-        ...(cls     && { class: cls }),
-        ...(section && { section }),
-        NOT: { phone: '' },
-      },
-      orderBy: { name: 'asc' },
-    });
+    console.log('🔔 Notify All Request:', { branch, cls, section, academicYear, notifyType });
 
-    const results = [];
-
-    for (const s of students) {
-      if (!s.phone) continue;
-
-      const total   = s.totalFee || 0;
-      const paid    = s.paidFee  || 0;
-      const allPaid = paid >= total && total > 0;
-
-      const t1Due = s.term1Due || 0;
-      const t2Due = s.term2Due || 0;
-      const t3Due = s.term3Due || 0;
-      const t1    = s.term1    || 0;
-      const t2    = s.term2    || 0;
-      const t3    = s.term3    || 0;
-
-      const t1Status = t1 > 0 && t1Due === 0 ? `✅ ₹${t1.toLocaleString()} Paid`    : t1Due > 0 ? `⚠️ ₹${t1Due.toLocaleString()} Pending` : '—';
-      const t2Status = t2 > 0 && t2Due === 0 ? `✅ ₹${t2.toLocaleString()} Paid`    : t2Due > 0 ? `⚠️ ₹${t2Due.toLocaleString()} Pending` : '—';
-      const t3Status = t3 > 0 && t3Due === 0 ? `✅ ₹${t3.toLocaleString()} Paid`    : t3Due > 0 ? `⚠️ ₹${t3Due.toLocaleString()} Pending` : '—';
-
-      const msg = allPaid
-        ? `Dear Parent of ${s.name},\n\n✅ All fees paid. Thank you!\n\nStudent: ${s.name} (${s.rollNo})\nClass: ${s.class}-${s.section}\nTotal: ₹${total.toLocaleString()}\n\n— School Management`
-        : `Dear Parent of ${s.name},\n\n📋 Fee Reminder\n\nStudent: ${s.name} (${s.rollNo})\nClass: ${s.class}-${s.section}\nTotal Fee: ₹${total.toLocaleString()}\n\nTerm 1: ${t1Status}\nTerm 2: ${t2Status}\nTerm 3: ${t3Status}\n\nOutstanding: ₹${(total - paid).toLocaleString()}\n\nPlease clear dues at the earliest.\n— School Management`;
-
-      try {
-        await sendWhatsApp(s.phone, msg);
-        results.push({ name: s.name, phone: s.phone, status: 'sent' });
-      } catch (err) {
-        // Log failed ones but continue sending to others
-        results.push({ name: s.name, phone: s.phone, status: 'failed', error: err.response?.data?.error?.message || err.message });
-      }
-
-      // ✅ 300ms gap to avoid Meta rate limits
-      await new Promise(r => setTimeout(r, 300));
+    if (!branch) {
+      return NextResponse.json({
+        success: false,
+        error: 'Branch is required',
+      }, { status: 400 });
     }
 
-    const sent   = results.filter(r => r.status === 'sent').length;
-    const failed = results.filter(r => r.status === 'failed').length;
+    // Build query
+    const where = { status: 'Active' };
+    where.branch = branch;
+    if (cls) where.class = cls;
+    if (section) where.section = section;
+    if (academicYear) where.academicYear = academicYear;
+
+    // Fetch students
+    const students = await prisma.student.findMany({
+      where,
+      orderBy: [{ class: 'asc' }, { section: 'asc' }, { rollNo: 'asc' }],
+    });
+
+    console.log(`📋 Found ${students.length} students`);
+
+    if (students.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: 'No students found',
+      }, { status: 404 });
+    }
+
+    const results = [];
+    let sentCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+
+    for (const student of students) {
+      const total = Number(student.totalFee) || 0;
+      const paid = Number(student.paidFee) || 0;
+      const due = total - paid;
+
+      // Skip conditions
+      if (!student.phone || student.phone.length < 10) {
+        results.push({
+          studentId: student.id,
+          name: student.name,
+          rollNo: student.rollNo,
+          class: student.class,
+          section: student.section,
+          phone: student.phone || 'N/A',
+          status: 'skipped',
+          error: 'No valid phone number',
+        });
+        skippedCount++;
+        continue;
+      }
+
+      if (total === 0) {
+        results.push({
+          studentId: student.id,
+          name: student.name,
+          rollNo: student.rollNo,
+          class: student.class,
+          section: student.section,
+          phone: student.phone,
+          status: 'skipped',
+          error: 'Fee not set',
+        });
+        skippedCount++;
+        continue;
+      }
+
+      if (notifyType === 'due' && due <= 0) {
+        results.push({
+          studentId: student.id,
+          name: student.name,
+          rollNo: student.rollNo,
+          class: student.class,
+          section: student.section,
+          phone: student.phone,
+          status: 'skipped',
+          error: 'No dues pending',
+        });
+        skippedCount++;
+        continue;
+      }
+
+      // Generate message
+      const message = generateFeeMessage(student);
+
+      // Send WhatsApp
+      const result = await sendWhatsAppMessage(student.phone, message);
+
+      if (result.success) {
+        sentCount++;
+        results.push({
+          studentId: student.id,
+          name: student.name,
+          rollNo: student.rollNo,
+          class: student.class,
+          section: student.section,
+          phone: student.phone,
+          totalFee: total,
+          paidFee: paid,
+          dueFee: due,
+          status: 'sent',
+          message: message,
+        });
+
+        // Log notification
+        try {
+          await prisma.feeNotification.create({
+            data: {
+              studentId: student.id,
+              studentName: student.name,
+              rollNo: student.rollNo || '',
+              phone: student.phone,
+              branch: student.branch || '',
+              class: student.class || '',
+              section: student.section || '',
+              academicYear: student.academicYear || '',
+              totalFee: total,
+              paidFee: paid,
+              dueFee: due,
+              message: message,
+              status: 'sent',
+              twilioSid: '',
+              error: '',
+              sentAt: new Date(),
+            },
+          });
+        } catch (logErr) {
+          console.warn('⚠️ Failed to log notification:', logErr.message);
+        }
+
+      } else {
+        failedCount++;
+        results.push({
+          studentId: student.id,
+          name: student.name,
+          rollNo: student.rollNo,
+          class: student.class,
+          section: student.section,
+          phone: student.phone,
+          totalFee: total,
+          paidFee: paid,
+          dueFee: due,
+          status: 'failed',
+          error: result.error,
+        });
+
+        // Log failed notification
+        try {
+          await prisma.feeNotification.create({
+            data: {
+              studentId: student.id,
+              studentName: student.name,
+              rollNo: student.rollNo || '',
+              phone: student.phone,
+              branch: student.branch || '',
+              class: student.class || '',
+              section: student.section || '',
+              academicYear: student.academicYear || '',
+              totalFee: total,
+              paidFee: paid,
+              dueFee: due,
+              message: message,
+              status: 'failed',
+              twilioSid: '',
+              error: result.error || 'Unknown error',
+              sentAt: new Date(),
+            },
+          });
+        } catch (logErr) {
+          console.warn('⚠️ Failed to log notification:', logErr.message);
+        }
+      }
+
+      // Rate limiting: 2 seconds between messages
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    const summary = `✅ Sent: ${sentCount} | ❌ Failed: ${failedCount} | ⏭️ Skipped: ${skippedCount} | 📊 Total: ${students.length}`;
+
+    console.log('📊 Notification Summary:', summary);
 
     return NextResponse.json({
       success: true,
       data: results,
-      summary: `✅ ${sent} sent, ❌ ${failed} failed`,
+      summary: summary,
+      stats: {
+        total: students.length,
+        sent: sentCount,
+        failed: failedCount,
+        skipped: skippedCount,
+      },
     });
+
   } catch (err) {
-    console.error('[notify-all]', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('❌ Notify All Error:', err);
+    return NextResponse.json({
+      success: false,
+      error: err.message,
+    }, { status: 500 });
   }
 }

@@ -5,35 +5,96 @@ export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const branch = searchParams.get('branch') || '';
-    // Store settings in a simple way — use a Setting model or fallback
-    return NextResponse.json({ success: true, data: { academicYear: '2025-26', branch } });
+
+    // Get current academic year from AcademicYear table
+    const currentYear = await prisma.academicYear.findFirst({
+      where: { 
+        isCurrent: true,
+        ...(branch && branch !== 'All' && { 
+          OR: [{ branch }, { branch: 'All' }] 
+        }),
+      },
+    });
+
+    return NextResponse.json({ 
+      success: true, 
+      data: { 
+        academicYear: currentYear?.year || '2025-26',
+        branch,
+        academicYearId: currentYear?.id,
+      } 
+    });
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[GET settings]', err);
+    return NextResponse.json({ 
+      success: false, 
+      error: err.message 
+    }, { status: 500 });
   }
 }
 
 export async function POST(req) {
   try {
-    const { branch = '', academicYear } = await req.json();
-    if (!academicYear) return NextResponse.json({ error: 'academicYear is required' }, { status: 400 });
+    const { branch = '', academicYear, yearId } = await req.json();
+    
+    if (!academicYear) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'academicYear is required' 
+      }, { status: 400 });
+    }
+
+    // Activate the academic year
+    if (yearId) {
+      // Deactivate all other years for this branch
+      await prisma.academicYear.updateMany({
+        where: {
+          ...(branch && { branch }),
+          isCurrent: true,
+        },
+        data: {
+          isCurrent: false,
+          status: 'completed',
+        },
+      });
+
+      // Activate selected year
+      await prisma.academicYear.update({
+        where: { id: yearId },
+        data: {
+          isCurrent: true,
+          status: 'active',
+        },
+      });
+    }
 
     // Update teachers
     const teacherResult = await prisma.teacher.updateMany({
-      where: { ...(branch && { branch }), status: 'Active' },
+      where: { 
+        ...(branch && { branch }), 
+        status: 'Active' 
+      },
       data: { academicYear },
     });
 
-    // Reset student fees for new year
+    // Note: Don't reset student fees here - that's done during rollover
+    // Just update the academic year
     const studentResult = await prisma.student.updateMany({
       where: branch ? { branch } : {},
-      data: { academicYear, term1: 0, term2: 0, term3: 0, paidFee: 0, term1Due: 0, term2Due: 0, term3Due: 0 },
+      data: { academicYear },
     });
 
     return NextResponse.json({
       success: true,
-      message: `Year updated. ${teacherResult.count} teacher(s) and ${studentResult.count} student(s) promoted.`,
+      message: `Academic year updated to ${academicYear}`,
+      teachersUpdated: teacherResult.count,
+      studentsUpdated: studentResult.count,
     });
   } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[POST settings]', err);
+    return NextResponse.json({ 
+      success: false, 
+      error: err.message 
+    }, { status: 500 });
   }
 }

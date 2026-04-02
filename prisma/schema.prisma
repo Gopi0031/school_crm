@@ -307,3 +307,124 @@ model UserNotification {
 
   @@unique([userId, notificationId], name: "userId_notificationId")
 }
+// schema.prisma - ADD these models
+
+// ─── ACADEMIC YEAR ───────────────────────────────────────
+model AcademicYear {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  year                String    // e.g., "2024-25", "2025-26"
+  startDate           String    @default("")
+  endDate             String    @default("")
+  isCurrent           Boolean   @default(false)
+  status              String    @default("upcoming") // upcoming, active, completed
+  branch              String    @default("All")
+  branchId            String    @default("")
+  transitionCompleted Boolean   @default(false)
+  transitionDate      DateTime?
+  createdBy           String    @default("")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([year, branch], name: "year_branch")
+}
+
+// ─── FEE STRUCTURE ───────────────────────────────────────
+model FeeStructure {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  academicYear String
+  branch       String
+  branchId     String   @default("")
+  class        String
+  totalFee     Float    @default(0)
+  term1Fee     Float    @default(0)
+  term2Fee     Float    @default(0)
+  term3Fee     Float    @default(0)
+  admissionFee Float    @default(0)
+  tuitionFee   Float    @default(0)
+  examFee      Float    @default(0)
+  labFee       Float    @default(0)
+  libraryFee   Float    @default(0)
+  sportsFee    Float    @default(0)
+  transportFee Float    @default(0)
+  otherFee     Float    @default(0)
+  description  String   @default("")
+  isActive     Boolean  @default(true)
+  createdBy    String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([academicYear, branch, class], name: "academicYear_branch_class")
+}
+
+// ─── PROMOTION HISTORY ───────────────────────────────────
+model PromotionHistory {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId        String   @db.ObjectId
+  studentName      String
+  rollNo           String
+  fromClass        String
+  toClass          String
+  fromAcademicYear String
+  toAcademicYear   String
+  fromSection      String   @default("")
+  toSection        String   @default("")
+  promotionType    String   @default("promoted") // promoted, passed_out, detained, transferred
+  branch           String
+  branchId         String   @default("")
+  oldFee           Float    @default(0)
+  newFee           Float    @default(0)
+  promotedBy       String   @default("")
+  remarks          String   @default("")
+  createdAt        DateTime @default(now())
+}
+
+// ─── FEE PAYMENT HISTORY ─────────────────────────────────
+model FeePayment {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId     String   @db.ObjectId
+  studentName   String   @default("")
+  rollNo        String   @default("")
+  class         String   @default("")
+  section       String   @default("")
+  branch        String   @default("")
+  branchId      String   @default("")
+  academicYear  String
+  amount        Float
+  paymentType   String   @default("cash") // cash, online, cheque, upi
+  paymentFor    String   @default("tuition") // tuition, term1, term2, term3, exam, transport, other
+  termNumber    Int      @default(0) // 1, 2, 3 or 0 for general
+  receiptNo     String   @default("")
+  transactionId String   @default("")
+  remarks       String   @default("")
+  paidDate      String
+  collectedBy   String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ─── FEE NOTIFICATION ────────────────────────────────────
+model FeeNotification {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId    String   @db.ObjectId
+  studentName  String
+  rollNo       String   @default("")
+  phone        String
+  branch       String   @default("")
+  class        String   @default("")
+  section      String   @default("")
+  academicYear String   @default("")
+  totalFee     Float    @default(0)
+  paidFee      Float    @default(0)
+  dueFee       Float    @default(0)
+  message      String   // No @db.Text for MongoDB
+  status       String   @default("sent")
+  twilioSid    String   @default("")
+  error        String   @default("")
+  sentAt       DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  @@index([studentId])
+  @@index([branch])
+  @@index([sentAt])
+  @@index([status])
+}

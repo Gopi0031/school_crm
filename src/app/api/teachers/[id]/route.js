@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 
 export async function GET(req, { params }) {
   try {
-    const { id } = await params;
+   const { id } = await params;  // ✅ await
     const teacher = await prisma.teacher.findUnique({ where: { id } });
     if (!teacher) return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
     return NextResponse.json({ success: true, data: teacher });
@@ -15,7 +15,7 @@ export async function GET(req, { params }) {
 
 export async function PUT(req, { params }) {
   try {
-    const { id } = await params;
+   const { id } = await params;  // ✅ await
     const body = await req.json();
     const {
       password, confirmPassword,   // ✅ strip
@@ -105,17 +105,31 @@ export async function PUT(req, { params }) {
 
 export async function DELETE(req, { params }) {
   try {
-    const { id } = await params;
+    const { id } = await params;  // ✅ await params
+    
+    console.log('🗑️ DELETE /api/teachers/' + id);
+    
     const teacher = await prisma.teacher.findUnique({ where: { id } });
     if (!teacher) return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
 
-    if (teacher.userId) {
-      await prisma.user.update({ where: { id: teacher.userId }, data: { isActive: false } });
+    // Deactivate user
+    if (teacher.userId && teacher.userId.length === 24) {
+      try {
+        await prisma.user.update({ 
+          where: { id: teacher.userId }, 
+          data: { isActive: false } 
+        });
+      } catch (e) {
+        console.warn('User deactivation failed:', e.message);
+      }
     }
+    
     await prisma.teacher.delete({ where: { id } });
+    console.log('✅ Teacher deleted:', id);
 
     return NextResponse.json({ success: true, message: 'Teacher deleted' });
   } catch (err) {
+    console.error('❌ DELETE teacher error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

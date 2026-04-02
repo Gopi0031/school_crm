@@ -39,7 +39,7 @@ const NAV = {
     { label: 'Events Calendar', href: '/branch-admin/events',           icon: CalendarDays },
     { label: 'Admission',       href: '/branch-admin/admission',        icon: LogIn },
     { label: 'Class Teacher',   href: '/branch-admin/class-teacher',    icon: Star },
-    { label: 'Settings',        href: '/branch-admin/settings',         icon: Settings },
+    // { label: 'Settings',        href: '/branch-admin/settings',         icon: Settings },
     { label: 'Profile',         href: '/branch-admin/profile',          icon: UserCircle },
   ],
   'teacher-admin': [
@@ -504,7 +504,7 @@ export default function AppLayout({ children, requiredRole }) {
                   {/* Menu items */}
                   {[
                     { icon:'👤', label:'My Profile', href:`/${userRole}/profile` },
-                    { icon:'⚙️', label:'Settings', href:`/${userRole}/profile` },
+                    // { icon:'⚙️', label:'Settings', href:`/${userRole}/profile` },
                   ].map((item, i) => (
                     <Link key={i} href={item.href} onClick={() => setProfileOpen(false)} style={{
                       display:'flex', alignItems:'center', gap:10, padding:'10px 16px',

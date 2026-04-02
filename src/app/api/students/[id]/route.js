@@ -1,3 +1,4 @@
+// src/app/api/students/[id]/route.js
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
@@ -7,7 +8,9 @@ import bcrypt from 'bcryptjs';
 // ═══════════════════════════════════════════════════════════════════════════
 export async function GET(req, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;  // ✅ MUST await params in Next.js 14+
+
+    console.log('📋 GET /api/students/ id:', id);
 
     if (!id) {
       return NextResponse.json({ 
@@ -90,15 +93,24 @@ export async function GET(req, { params }) {
 // ═══════════════════════════════════════════════════════════════════════════
 export async function PUT(req, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;  // ✅ MUST await params in Next.js 14+
     const body = await req.json();
 
-    console.log('📝 PUT /api/students/' + id, body);
+    console.log('📝 PUT /api/students/' + id, Object.keys(body));
 
     if (!id) {
       return NextResponse.json({ 
         success: false, 
         error: 'Student ID is required' 
+      }, { status: 400 });
+    }
+
+    // Validate ObjectId format
+    const isValidObjectId = /^[a-fA-F0-9]{24}$/.test(id);
+    if (!isValidObjectId) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid student ID format' 
       }, { status: 400 });
     }
 
@@ -111,7 +123,7 @@ export async function PUT(req, { params }) {
       }, { status: 404 });
     }
 
-    // Extract password fields (don't save directly)
+    // Extract password fields (don't save directly to student)
     const { password, confirmPassword, ...updateFields } = body;
 
     // ✅ Process fee fields with proper rounding
@@ -161,26 +173,34 @@ export async function PUT(req, { params }) {
       data: processedData,
     });
 
+    console.log('✅ Student updated:', updated.name);
+
     // ═══════════════════════════════════════════════════════
     // Handle password update if provided
     // ═══════════════════════════════════════════════════════
-    if (password && password.trim().length >= 6 && existing.userId) {
-      try {
-        const hashedPwd = await bcrypt.hash(password.trim(), 10);
-        await prisma.user.update({
-          where: { id: existing.userId },
-          data: { password: hashedPwd }
-        });
-        console.log('✅ Password updated for user:', existing.userId);
-      } catch (pwdErr) {
-        console.warn('⚠️ Password update failed:', pwdErr.message);
+    if (password && password.trim().length >= 6) {
+      const userId = existing.userId;
+      
+      if (userId && /^[a-fA-F0-9]{24}$/.test(userId)) {
+        try {
+          const hashedPwd = await bcrypt.hash(password.trim(), 10);
+          await prisma.user.update({
+            where: { id: userId },
+            data: { password: hashedPwd }
+          });
+          console.log('✅ Password updated for user:', userId);
+        } catch (pwdErr) {
+          console.warn('⚠️ Password update failed:', pwdErr.message);
+        }
+      } else {
+        console.warn('⚠️ No valid userId for password update');
       }
     }
 
     // ═══════════════════════════════════════════════════════
     // Sync user record if exists
     // ═══════════════════════════════════════════════════════
-    if (existing.userId) {
+    if (existing.userId && /^[a-fA-F0-9]{24}$/.test(existing.userId)) {
       try {
         await prisma.user.update({
           where: { id: existing.userId },
@@ -197,8 +217,6 @@ export async function PUT(req, { params }) {
         console.warn('⚠️ User sync failed:', syncErr.message);
       }
     }
-
-    console.log('✅ Student updated:', id);
 
     return NextResponse.json({ 
       success: true, 
@@ -225,15 +243,25 @@ export async function PUT(req, { params }) {
 // ═══════════════════════════════════════════════════════════════════════════
 export async function PATCH(req, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;  // ✅ MUST await params in Next.js 14+
     const body = await req.json();
 
-    console.log('📝 PATCH /api/students/' + id, body);
+    console.log('📝 PATCH /api/students/' + id, Object.keys(body));
 
     if (!id) {
       return NextResponse.json({ 
         success: false, 
         error: 'Student ID is required',
+        data: null 
+      }, { status: 400 });
+    }
+
+    // Validate ObjectId format
+    const isValidObjectId = /^[a-fA-F0-9]{24}$/.test(id);
+    if (!isValidObjectId) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid student ID format',
         data: null 
       }, { status: 400 });
     }
@@ -290,7 +318,7 @@ export async function PATCH(req, { params }) {
       data: updateData,
     });
 
-    console.log('✅ Student PATCH updated:', id, 'totalFee:', updated.totalFee);
+    console.log('✅ Student PATCH updated:', updated.name);
 
     return NextResponse.json({ 
       success: true, 
@@ -349,7 +377,7 @@ export async function DELETE(req, { params }) {
     console.log('📋 Deleting student:', student.name, student.rollNo);
 
     // ✅ Deactivate linked user (only if userId is a valid ObjectId)
-    if (student.userId && student.userId.length === 24 && /^[a-fA-F0-9]{24}$/.test(student.userId)) {
+    if (student.userId && /^[a-fA-F0-9]{24}$/.test(student.userId)) {
       try {
         await prisma.user.update({
           where: { id: student.userId },

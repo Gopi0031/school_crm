@@ -6,14 +6,14 @@ import { PageHeader, Badge, TableWrapper, Pagination, EmptyState, Modal, FormFie
 import { useAuth } from '@/context/AuthContext';
 import {
   Plus, Upload, Eye, Trash2, Search, FileDown,
-  X, Edit2, CheckSquare, Square, Loader
+  X, Edit2, CheckSquare, Square, Loader, BookOpen, Award
 } from 'lucide-react';
 
 const BLANK = {
   studentId: '', subject: '', marksObtained: '', totalMarks: 100,
   exam: 'Annual', academicYear: '2025-26',
 };
-const EXAMS    = ['Annual', 'Unit Test 1', 'Unit Test 2', 'Mid Term', 'Half Yearly'];
+const EXAMS    = ['Unit Test 1', 'Unit Test 2', 'Mid Term', 'Half Yearly', 'Annual'];
 const CLASSES  = ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
 const SECTIONS = ['A','B','C','D','E'];
 
@@ -21,46 +21,71 @@ function F({ label, req, children }) {
   return <FormField label={label} required={req}>{children}</FormField>;
 }
 
-// Helper to get ID safely
 const getId = (item) => item?._id || item?.id || '';
 
-// ── PDF Builder ────────────────────────────────────────────────────────────────
-function buildReportPDF({ studentReports, title, user, cls, section, exam }) {
-  const grouped = studentReports.reduce((acc, r) => {
-    const key = r.studentName + '|' + r.rollNo;
-    if (!acc[key]) acc[key] = { name: r.studentName, rollNo: r.rollNo, cls: r.class, section: r.section, subjects: [] };
-    acc[key].subjects.push(r);
-    return acc;
-  }, {});
+// ── Group reports by Student + Exam ──────────────────────────────────────────
+function groupByStudentExam(reports) {
+  const grouped = {};
+  
+  reports.forEach(r => {
+    const key = `${r.studentId}-${r.exam}`;
+    if (!grouped[key]) {
+      grouped[key] = {
+        key,
+        studentId: r.studentId,
+        studentName: r.studentName,
+        rollNo: r.rollNo,
+        class: r.class,
+        section: r.section,
+        branch: r.branch,
+        exam: r.exam,
+        academicYear: r.academicYear,
+        subjects: [],
+        totalObtained: 0,
+        totalMax: 0,
+      };
+    }
+    grouped[key].subjects.push(r);
+    grouped[key].totalObtained += Number(r.marksObtained) || 0;
+    grouped[key].totalMax += Number(r.totalMarks) || 0;
+  });
 
-  const blocks = Object.values(grouped).map(st => {
-    const totalObt = st.subjects.reduce((s, r) => s + Number(r.marksObtained), 0);
-    const totalMax = st.subjects.reduce((s, r) => s + Number(r.totalMarks), 0);
-    const pct      = totalMax ? Math.round(totalObt / totalMax * 100) : 0;
-    const pass     = pct >= 35;
-    const rows = st.subjects.map((r, i) => {
-      const p  = r.percentage;
-      const pc = p >= 75 ? '#16a34a' : p >= 35 ? '#f59e0b' : '#ef4444';
+  // Calculate overall percentage and status for each group
+  return Object.values(grouped).map(g => ({
+    ...g,
+    subjectCount: g.subjects.length,
+    percentage: g.totalMax > 0 ? Math.round((g.totalObtained / g.totalMax) * 100) : 0,
+    status: g.totalMax > 0 && (g.totalObtained / g.totalMax) >= 0.35 ? 'Pass' : 'Fail',
+    allPassed: g.subjects.every(s => s.status === 'Pass'),
+  }));
+}
+
+// ── PDF Builder (Term-wise) ─────────────────────────────────────────────────
+function buildReportPDF({ groupedReports, title, user, cls, section, exam }) {
+  const blocks = groupedReports.map(g => {
+    const rows = g.subjects.map((r, i) => {
+      const pc = r.percentage >= 75 ? '#16a34a' : r.percentage >= 35 ? '#f59e0b' : '#ef4444';
       return `<tr style="background:${i%2===0?'#fff':'#f8fafc'}">
         <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0">${r.subject}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700">${r.marksObtained}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;color:#64748b">${r.totalMarks}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;color:${pc}">${p}%</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;color:${pc}">${r.percentage}%</td>
         <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;text-align:center">
           <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${r.status==='Pass'?'#dcfce7':'#fee2e2'};color:${r.status==='Pass'?'#16a34a':'#dc2626'}">${r.status}</span>
         </td>
       </tr>`;
     }).join('');
+
     return `
       <div style="margin-bottom:24px;page-break-inside:avoid">
         <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border-left:4px solid #4f46e5;padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:10px">
           <div>
-            <div style="font-weight:800;font-size:14px;color:#1e293b">${st.name}</div>
-            <div style="font-size:11px;color:#64748b;margin-top:2px">Roll No: ${st.rollNo} &nbsp;•&nbsp; ${st.cls} — Section ${st.section}</div>
+            <div style="font-weight:800;font-size:14px;color:#1e293b">${g.studentName}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:2px">Roll No: ${g.rollNo} &nbsp;•&nbsp; ${g.class} — Section ${g.section} &nbsp;•&nbsp; <b>${g.exam}</b></div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:18px;font-weight:800;color:${pct>=75?'#10b981':pct>=35?'#f59e0b':'#ef4444'}">${pct}%</div>
-            <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${pass?'#dcfce7':'#fee2e2'};color:${pass?'#16a34a':'#dc2626'}">${pass?'PASS':'FAIL'}</span>
+            <div style="font-size:18px;font-weight:800;color:${g.percentage>=75?'#10b981':g.percentage>=35?'#f59e0b':'#ef4444'}">${g.percentage}%</div>
+            <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${g.status==='Pass'?'#dcfce7':'#fee2e2'};color:${g.status==='Pass'?'#16a34a':'#dc2626'}">${g.status}</span>
           </div>
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -73,12 +98,12 @@ function buildReportPDF({ studentReports, title, user, cls, section, exam }) {
           </tr></thead>
           <tbody>${rows}</tbody>
           <tfoot><tr style="background:#f1f5f9">
-            <td style="padding:8px 10px;font-weight:800">TOTAL</td>
-            <td style="padding:8px 10px;text-align:center;font-weight:800;color:#4f46e5">${totalObt}</td>
-            <td style="padding:8px 10px;text-align:center;color:#64748b">${totalMax}</td>
-            <td style="padding:8px 10px;text-align:center;font-weight:800;color:${pct>=75?'#10b981':pct>=35?'#f59e0b':'#ef4444'}">${pct}%</td>
+            <td style="padding:8px 10px;font-weight:800">GRAND TOTAL</td>
+            <td style="padding:8px 10px;text-align:center;font-weight:800;color:#4f46e5">${g.totalObtained}</td>
+            <td style="padding:8px 10px;text-align:center;color:#64748b">${g.totalMax}</td>
+            <td style="padding:8px 10px;text-align:center;font-weight:800;color:${g.percentage>=75?'#10b981':g.percentage>=35?'#f59e0b':'#ef4444'}">${g.percentage}%</td>
             <td style="padding:8px 10px;text-align:center">
-              <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${pass?'#dcfce7':'#fee2e2'};color:${pass?'#16a34a':'#dc2626'}">${pass?'PASS':'FAIL'}</span>
+              <span style="padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:${g.status==='Pass'?'#dcfce7':'#fee2e2'};color:${g.status==='Pass'?'#16a34a':'#dc2626'}">${g.status}</span>
             </td>
           </tr></tfoot>
         </table>
@@ -95,7 +120,7 @@ function buildReportPDF({ studentReports, title, user, cls, section, exam }) {
   </style></head><body>
   <div class="top">
     <div>
-      <div style="font-size:20px;font-weight:800">📊 SchoolERP — Academic Report</div>
+      <div style="font-size:20px;font-weight:800">📊 SchoolERP — Academic Report Card</div>
       <div style="font-size:12px;opacity:0.85;margin-top:4px">${user?.branch} &nbsp;•&nbsp; ${cls||'All Classes'} ${section?'— Section '+section:''} ${exam?'• '+exam:''}</div>
     </div>
     <div style="text-align:right;font-size:12px;opacity:0.9">
@@ -106,9 +131,21 @@ function buildReportPDF({ studentReports, title, user, cls, section, exam }) {
   ${blocks}
   <div class="footer">
     <span>SchoolERP &nbsp;•&nbsp; ${user?.branch}</span>
-    <span>Total Students: ${Object.keys(grouped).length} &nbsp;•&nbsp; Printed on ${new Date().toLocaleString('en-IN')}</span>
+    <span>Total Records: ${groupedReports.length} &nbsp;•&nbsp; Printed on ${new Date().toLocaleString('en-IN')}</span>
   </div>
   </body></html>`;
+}
+
+// ── Exam Badge Color ─────────────────────────────────────────────────────────
+function getExamColor(exam) {
+  const colors = {
+    'Unit Test 1': { bg: '#fef3c7', text: '#92400e', border: '#fcd34d' },
+    'Unit Test 2': { bg: '#fed7aa', text: '#9a3412', border: '#fb923c' },
+    'Mid Term':    { bg: '#dbeafe', text: '#1e40af', border: '#60a5fa' },
+    'Half Yearly': { bg: '#e0e7ff', text: '#3730a3', border: '#818cf8' },
+    'Annual':      { bg: '#dcfce7', text: '#166534', border: '#4ade80' },
+  };
+  return colors[exam] || { bg: '#f1f5f9', text: '#475569', border: '#94a3b8' };
 }
 
 export default function BranchAdminReports() {
@@ -127,9 +164,9 @@ export default function BranchAdminReports() {
   const [showBulk, setShowBulk]     = useState(false);
   const [editReport, setEditReport] = useState(null);
   const [form, setForm]             = useState(BLANK);
-  const [selected, setSelected]     = useState(null);
-  const [deleteId, setDeleteId]     = useState(null);
-  const [checkedIds, setCheckedIds] = useState([]);
+  const [selected, setSelected]     = useState(null); // This will now hold grouped data
+  const [deleteGroup, setDeleteGroup] = useState(null);
+  const [checkedKeys, setCheckedKeys] = useState([]);
   const [showMultiDel, setShowMultiDel] = useState(false);
   const [error, setError]           = useState('');
   const [toast, setToast]           = useState({ msg: '', type: 'success' });
@@ -168,40 +205,43 @@ export default function BranchAdminReports() {
 
   useEffect(() => { if (user) load(); }, [user, cls, section, exam]);
 
-  const filtered = useMemo(() => reports.filter(r =>
+  // ── Group reports by Student + Exam ───────────────────────
+  const groupedReports = useMemo(() => groupByStudentExam(reports), [reports]);
+
+  const filtered = useMemo(() => groupedReports.filter(g =>
     !search ||
-    r.studentName?.toLowerCase().includes(search.toLowerCase()) ||
-    r.rollNo?.toLowerCase().includes(search.toLowerCase())
-  ), [reports, search]);
+    g.studentName?.toLowerCase().includes(search.toLowerCase()) ||
+    g.rollNo?.toLowerCase().includes(search.toLowerCase())
+  ), [groupedReports, search]);
 
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
   // ── Checkbox helpers ──────────────────────────────────────
-  const allPageChecked = paginated.length > 0 && paginated.every(r => checkedIds.includes(getId(r)));
+  const allPageChecked = paginated.length > 0 && paginated.every(g => checkedKeys.includes(g.key));
   const toggleAll = () => {
-    const pageIds = paginated.map(r => getId(r));
-    if (allPageChecked) setCheckedIds(prev => prev.filter(id => !pageIds.includes(id)));
-    else setCheckedIds(prev => [...new Set([...prev, ...pageIds])]);
+    const pageKeys = paginated.map(g => g.key);
+    if (allPageChecked) setCheckedKeys(prev => prev.filter(k => !pageKeys.includes(k)));
+    else setCheckedKeys(prev => [...new Set([...prev, ...pageKeys])]);
   };
-  const toggleOne = (id) =>
-    setCheckedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleOne = (key) =>
+    setCheckedKeys(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
 
   // ── PDF exports ───────────────────────────────────────────
   const exportAllPDF = () => {
     if (!filtered.length) return;
     setExportingAll(true);
-    const html = buildReportPDF({ studentReports: filtered, title: 'All Reports', user, cls, section, exam });
+    const html = buildReportPDF({ groupedReports: filtered, title: 'All Reports', user, cls, section, exam });
     const win = window.open('', '_blank');
     win.document.write(html); win.document.close();
     setTimeout(() => { win.print(); setExportingAll(false); }, 600);
   };
 
   const exportSelectedPDF = () => {
-    if (!checkedIds.length) return;
+    if (!checkedKeys.length) return;
     setExportingSel(true);
-    const sel  = reports.filter(r => checkedIds.includes(getId(r)));
-    const html = buildReportPDF({ studentReports: sel, title: 'Selected Reports', user, cls, section, exam });
-    const win  = window.open('', '_blank');
+    const sel = filtered.filter(g => checkedKeys.includes(g.key));
+    const html = buildReportPDF({ groupedReports: sel, title: 'Selected Reports', user, cls, section, exam });
+    const win = window.open('', '_blank');
     win.document.write(html); win.document.close();
     setTimeout(() => { win.print(); setExportingSel(false); }, 600);
   };
@@ -218,7 +258,7 @@ export default function BranchAdminReports() {
     setSaving(true);
     try {
       const method = editReport ? 'PUT' : 'POST';
-      const url    = editReport ? `/api/reports/${getId(editReport)}` : '/api/reports';
+      const url = editReport ? `/api/reports/${getId(editReport)}` : '/api/reports';
       const r = await fetch(url, {
         method, headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, branch: user?.branch }),
@@ -230,42 +270,59 @@ export default function BranchAdminReports() {
     } finally { setSaving(false); }
   };
 
-  const openEdit = (r) => {
-    setEditReport(r);
-    setForm({ 
-      studentId: r.studentId, 
-      subject: r.subject, 
-      marksObtained: r.marksObtained, 
-      totalMarks: r.totalMarks, 
-      exam: r.exam, 
-      academicYear: r.academicYear 
+  const openEditSubject = (subjectReport) => {
+    setEditReport(subjectReport);
+    setForm({
+      studentId: subjectReport.studentId,
+      subject: subjectReport.subject,
+      marksObtained: subjectReport.marksObtained,
+      totalMarks: subjectReport.totalMarks,
+      exam: subjectReport.exam,
+      academicYear: subjectReport.academicYear
     });
-    setError(''); 
+    setError('');
+    setSelected(null);
     setShowAdd(true);
   };
 
-  // ── Delete single ─────────────────────────────────────────
-  const deleteReport = async () => {
-    try {
-      const r = await fetch(`/api/reports/${deleteId}`, { method: 'DELETE' });
-      const d = await r.json();
-      if (!r.ok) { showToast(d.error || 'Delete failed', 'error'); return; }
-      showToast('Report deleted');
-      setCheckedIds(prev => prev.filter(id => id !== deleteId));
-    } finally { setDeleteId(null); load(); }
-  };
-
-  // ── Delete multiple ───────────────────────────────────────
-  const deleteMultiple = async () => {
-    setMultiDeleting(true);
+  // ── Delete group (all subjects for a student+exam) ────────
+  const deleteGroupReports = async () => {
+    if (!deleteGroup) return;
+    const ids = deleteGroup.subjects.map(s => getId(s));
     try {
       const r = await fetch('/api/reports/bulk-delete', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: checkedIds }),
+        body: JSON.stringify({ ids }),
       });
       const d = await r.json();
-      if (d.success) { showToast(`${checkedIds.length} report(s) deleted`); setCheckedIds([]); setShowMultiDel(false); load(); }
-      else showToast(d.error || 'Delete failed', 'error');
+      if (d.success) {
+        showToast(`${ids.length} subject report(s) deleted`);
+        setCheckedKeys(prev => prev.filter(k => k !== deleteGroup.key));
+      } else {
+        showToast(d.error || 'Delete failed', 'error');
+      }
+    } finally { setDeleteGroup(null); load(); }
+  };
+
+  // ── Delete multiple groups ────────────────────────────────
+  const deleteMultiple = async () => {
+    setMultiDeleting(true);
+    const selectedGroups = filtered.filter(g => checkedKeys.includes(g.key));
+    const allIds = selectedGroups.flatMap(g => g.subjects.map(s => getId(s)));
+    try {
+      const r = await fetch('/api/reports/bulk-delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: allIds }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        showToast(`${allIds.length} report(s) deleted`);
+        setCheckedKeys([]);
+        setShowMultiDel(false);
+        load();
+      } else {
+        showToast(d.error || 'Delete failed', 'error');
+      }
     } finally { setMultiDeleting(false); }
   };
 
@@ -279,7 +336,7 @@ export default function BranchAdminReports() {
     fd.append('exam', bulkExam);
     fd.append('academicYear', bulkYear);
     try {
-      const r    = await fetch('/api/reports/bulk-upload', { method: 'POST', body: fd });
+      const r = await fetch('/api/reports/bulk-upload', { method: 'POST', body: fd });
       const text = await r.text();
       let d;
       try { d = JSON.parse(text); }
@@ -292,7 +349,7 @@ export default function BranchAdminReports() {
   };
 
   const downloadTemplate = () => {
-    const csv = ['rollno,subject,marks,totalmarks,exam,academicyear','2025001,Mathematics,85,100,Annual,2025-26','2025002,Science,72,100,Annual,2025-26'].join('\n');
+    const csv = ['rollno,subject,marks,totalmarks,exam,academicyear','2025001,Mathematics,85,100,Annual,2025-26','2025001,Science,78,100,Annual,2025-26','2025001,English,92,100,Annual,2025-26','2025002,Mathematics,72,100,Annual,2025-26'].join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     a.download = 'reports_template.csv'; a.click();
@@ -302,10 +359,12 @@ export default function BranchAdminReports() {
     ? Math.round(Number(form.marksObtained) / Number(form.totalMarks) * 100)
     : null;
 
-  const passCount = reports.filter(r => r.status === 'Pass').length;
-  const failCount = reports.length - passCount;
-  const avgPct    = reports.length
-    ? Math.round(reports.reduce((s, r) => s + (r.percentage || 0), 0) / reports.length)
+  // Stats from grouped data
+  const totalStudentExams = groupedReports.length;
+  const passCount = groupedReports.filter(g => g.status === 'Pass').length;
+  const failCount = totalStudentExams - passCount;
+  const avgPct = totalStudentExams
+    ? Math.round(groupedReports.reduce((s, g) => s + g.percentage, 0) / totalStudentExams)
     : 0;
 
   return (
@@ -320,7 +379,7 @@ export default function BranchAdminReports() {
         </div>
       )}
 
-      <PageHeader title="Reports" subtitle="Student academic results">
+      <PageHeader title="Reports" subtitle="Term-wise Student Results">
         <button className="btn btn-outline" onClick={exportAllPDF} disabled={exportingAll || !filtered.length}
           style={{ display:'flex', alignItems:'center', gap:6 }}>
           {exportingAll
@@ -328,17 +387,17 @@ export default function BranchAdminReports() {
             : <><FileDown size={13} /> Export All PDF</>}
         </button>
 
-        {checkedIds.length > 0 && (
+        {checkedKeys.length > 0 && (
           <>
             <button className="btn btn-outline" onClick={exportSelectedPDF} disabled={exportingSel}
               style={{ display:'flex', alignItems:'center', gap:6, color:'#4f46e5', borderColor:'#4f46e5' }}>
               {exportingSel
                 ? <><Loader size={13} style={{ animation:'spin 1s linear infinite' }} /> Preparing...</>
-                : <><FileDown size={13} /> Export Selected ({checkedIds.length})</>}
+                : <><FileDown size={13} /> Export Selected ({checkedKeys.length})</>}
             </button>
             <button className="btn btn-danger" onClick={() => setShowMultiDel(true)}
               style={{ display:'flex', alignItems:'center', gap:6 }}>
-              <Trash2 size={13} /> Delete ({checkedIds.length})
+              <Trash2 size={13} /> Delete ({checkedKeys.length})
             </button>
           </>
         )}
@@ -356,12 +415,13 @@ export default function BranchAdminReports() {
       {/* ── Summary Cards ─────────────────────────────────── */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:16 }}>
         {[
-          { l:'Total Records', v: reports.length, c:'#4f46e5' },
-          { l:'Pass',          v: passCount,       c:'#10b981' },
-          { l:'Fail',          v: failCount,       c:'#ef4444' },
-          { l:'Avg Score',     v: `${avgPct}%`,    c:'#f59e0b' },
-        ].map(({ l, v, c }) => (
+          { l:'Total Results', v: totalStudentExams, c:'#4f46e5', icon: '📊' },
+          { l:'Pass',          v: passCount,          c:'#10b981', icon: '✅' },
+          { l:'Fail',          v: failCount,          c:'#ef4444', icon: '❌' },
+          { l:'Avg Score',     v: `${avgPct}%`,       c:'#f59e0b', icon: '📈' },
+        ].map(({ l, v, c, icon }) => (
           <div key={l} className="card" style={{ textAlign:'center', borderTop:`3px solid ${c}`, padding:14 }}>
+            <div style={{ fontSize:'1.2rem', marginBottom:4 }}>{icon}</div>
             <div style={{ fontSize:'1.5rem', fontWeight:800, color:c }}>{v}</div>
             <div style={{ fontSize:'0.72rem', color:'#64748b', marginTop:3 }}>{l}</div>
           </div>
@@ -393,20 +453,20 @@ export default function BranchAdminReports() {
             )}
           </div>
           <span style={{ fontSize:'0.78rem', color:'#94a3b8', marginLeft:'auto', whiteSpace:'nowrap' }}>
-            {filtered.length} records
+            {filtered.length} results
           </span>
         </div>
       </div>
 
       {/* ── Selection bar ─────────────────────────────────── */}
-      {checkedIds.length > 0 && (
+      {checkedKeys.length > 0 && (
         <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:10, padding:'10px 16px', marginBottom:12, display:'flex', alignItems:'center', justifyContent:'space-between', fontSize:'0.83rem' }}>
-          <span style={{ color:'#1d4ed8', fontWeight:600 }}>✓ {checkedIds.length} report(s) selected — Export or Delete</span>
-          <button onClick={() => setCheckedIds([])} style={{ background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:'0.78rem' }}>Clear</button>
+          <span style={{ color:'#1d4ed8', fontWeight:600 }}>✓ {checkedKeys.length} result(s) selected — Export or Delete</span>
+          <button onClick={() => setCheckedKeys([])} style={{ background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:'0.78rem' }}>Clear</button>
         </div>
       )}
 
-      {/* ── Table ─────────────────────────────────────────── */}
+      {/* ── Table (Term-wise grouped) ─────────────────────── */}
       <div className="card" style={{ padding:0, overflow:'hidden' }}>
         <TableWrapper>
           <thead>
@@ -416,58 +476,81 @@ export default function BranchAdminReports() {
                   {allPageChecked ? <CheckSquare size={16} color="#4f46e5" /> : <Square size={16} color="#94a3b8" />}
                 </div>
               </th>
-              <th>S.No</th><th>Roll No</th><th>Student</th><th>Class</th>
-              <th>Subject</th><th>Marks</th><th>Total</th><th>Score</th>
-              <th>Result</th><th>Exam</th><th>Actions</th>
+              <th>S.No</th>
+              <th>Roll No</th>
+              <th>Student</th>
+              <th>Class</th>
+              <th>Exam / Term</th>
+              <th>Subjects</th>
+              <th>Total Marks</th>
+              <th>Percentage</th>
+              <th>Result</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={12} style={{ textAlign:'center', padding:52 }}>
+              <tr><td colSpan={11} style={{ textAlign:'center', padding:52 }}>
                 <div style={{ width:32, height:32, border:'3px solid #e2e8f0', borderTopColor:'#4f46e5', borderRadius:'50%', animation:'spin 0.7s linear infinite', margin:'0 auto 10px' }} />
                 <span style={{ color:'#94a3b8', fontSize:'0.83rem' }}>Loading reports...</span>
               </td></tr>
             ) : paginated.length === 0 ? (
-              <tr><td colSpan={12}><EmptyState message="No reports found. Add reports or adjust filters." /></td></tr>
-            ) : paginated.map((r, i) => {
-              const reportId = getId(r);
-              const isChecked = checkedIds.includes(reportId);
+              <tr><td colSpan={11}><EmptyState message="No results found. Add reports or adjust filters." /></td></tr>
+            ) : paginated.map((g, i) => {
+              const isChecked = checkedKeys.includes(g.key);
+              const examColor = getExamColor(g.exam);
               return (
-                <tr key={reportId || `report-${i}`} style={{ borderBottom:'1px solid #f1f5f9', background: isChecked ? '#f5f3ff' : 'white', transition:'background 0.15s' }}>
+                <tr key={g.key} style={{ borderBottom:'1px solid #f1f5f9', background: isChecked ? '#f5f3ff' : 'white', transition:'background 0.15s' }}>
                   <td>
-                    <div onClick={() => toggleOne(reportId)} style={{ cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <div onClick={() => toggleOne(g.key)} style={{ cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                       {isChecked ? <CheckSquare size={15} color="#4f46e5" /> : <Square size={15} color="#94a3b8" />}
                     </div>
                   </td>
                   <td style={{ color:'#94a3b8', fontSize:'0.78rem' }}>{(page-1)*perPage+i+1}</td>
-                  <td style={{ fontWeight:700, color:'#4f46e5', fontSize:'0.8rem' }}>{r.rollNo}</td>
+                  <td style={{ fontWeight:700, color:'#4f46e5', fontSize:'0.8rem', fontFamily:'monospace' }}>{g.rollNo}</td>
                   <td>
-                    <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.84rem' }}>{r.studentName}</div>
-                    <div style={{ fontSize:'0.68rem', color:'#94a3b8' }}>{r.academicYear}</div>
+                    <div style={{ fontWeight:600, color:'#1e293b', fontSize:'0.84rem' }}>{g.studentName}</div>
+                    <div style={{ fontSize:'0.68rem', color:'#94a3b8' }}>{g.academicYear}</div>
                   </td>
-                  <td style={{ fontSize:'0.83rem', color:'#64748b' }}>{r.class}–{r.section}</td>
-                  <td style={{ fontSize:'0.83rem', fontWeight:600 }}>{r.subject}</td>
-                  <td style={{ fontWeight:800, color:'#1e293b' }}>{r.marksObtained}</td>
-                  <td style={{ color:'#64748b' }}>{r.totalMarks}</td>
+                  <td style={{ fontSize:'0.83rem', color:'#64748b' }}>{g.class}–{g.section}</td>
+                  <td>
+                    <span style={{
+                      padding:'4px 12px', borderRadius:20, fontSize:'0.75rem', fontWeight:700,
+                      background: examColor.bg, color: examColor.text, border:`1px solid ${examColor.border}`
+                    }}>
+                      {g.exam}
+                    </span>
+                  </td>
                   <td>
                     <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                      <div style={{ width:42, height:5, background:'#f1f5f9', borderRadius:3, overflow:'hidden' }}>
-                        <div style={{ height:'100%', width:`${Math.min(100,r.percentage)}%`, background: r.percentage>=75?'#10b981':r.percentage>=35?'#f59e0b':'#ef4444', borderRadius:3 }} />
+                      <BookOpen size={13} color="#64748b" />
+                      <span style={{ fontWeight:600, color:'#1e293b' }}>{g.subjectCount}</span>
+                    </div>
+                  </td>
+                  <td style={{ fontWeight:700, color:'#1e293b' }}>
+                    {g.totalObtained} <span style={{ color:'#94a3b8', fontWeight:400 }}>/ {g.totalMax}</span>
+                  </td>
+                  <td>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <div style={{ width:50, height:6, background:'#f1f5f9', borderRadius:3, overflow:'hidden' }}>
+                        <div style={{ height:'100%', width:`${Math.min(100,g.percentage)}%`, background: g.percentage>=75?'#10b981':g.percentage>=35?'#f59e0b':'#ef4444', borderRadius:3 }} />
                       </div>
-                      <span style={{ fontSize:'0.75rem', fontWeight:700, color: r.percentage>=75?'#10b981':r.percentage>=35?'#f59e0b':'#ef4444' }}>{r.percentage}%</span>
+                      <span style={{ fontSize:'0.8rem', fontWeight:700, color: g.percentage>=75?'#10b981':g.percentage>=35?'#f59e0b':'#ef4444' }}>{g.percentage}%</span>
                     </div>
                   </td>
                   <td>
-                    <span style={{ padding:'3px 10px', borderRadius:20, fontSize:'0.72rem', fontWeight:700, background: r.status==='Pass'?'#dcfce7':'#fee2e2', color: r.status==='Pass'?'#16a34a':'#dc2626' }}>
-                      {r.status}
+                    <span style={{ padding:'4px 12px', borderRadius:20, fontSize:'0.72rem', fontWeight:700, background: g.status==='Pass'?'#dcfce7':'#fee2e2', color: g.status==='Pass'?'#16a34a':'#dc2626' }}>
+                      {g.status}
                     </span>
                   </td>
-                  <td style={{ fontSize:'0.78rem', color:'#64748b' }}>{r.exam}</td>
                   <td>
                     <div style={{ display:'flex', gap:4 }}>
-                      <button title="View"   className="btn btn-primary" style={{ padding:'4px 7px' }} onClick={() => setSelected(r)}><Eye size={11} /></button>
-                      <button title="Edit"   className="btn btn-outline" style={{ padding:'4px 7px' }} onClick={() => openEdit(r)}><Edit2 size={11} /></button>
-                      <button title="Delete" className="btn btn-danger"  style={{ padding:'4px 7px' }} onClick={() => setDeleteId(reportId)}><Trash2 size={11} /></button>
+                      <button title="View Subjects" className="btn btn-primary" style={{ padding:'5px 10px' }} onClick={() => setSelected(g)}>
+                        <Eye size={12} /> View
+                      </button>
+                      <button title="Delete All" className="btn btn-danger" style={{ padding:'5px 8px' }} onClick={() => setDeleteGroup(g)}>
+                        <Trash2 size={12} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -480,9 +563,142 @@ export default function BranchAdminReports() {
         </div>
       </div>
 
-      {/* ── Add / Edit Modal ──────────────────────────────── */}
+      {/* ── View Subjects Modal (Term-wise Detail) ────────── */}
+      {selected && (
+        <Modal open onClose={() => setSelected(null)} title={`${selected.exam} — ${selected.studentName}`} size="lg">
+          {/* Student Info Header */}
+          <div style={{ display:'flex', alignItems:'center', gap:14, background:'linear-gradient(135deg,#eff6ff,#e0f2fe)', borderRadius:12, padding:'14px 18px', marginBottom:16 }}>
+            <div style={{ width:50, height:50, borderRadius:'50%', background:'linear-gradient(135deg,#4f46e5,#7c3aed)', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:800, fontSize:'1.3rem', flexShrink:0 }}>
+              {selected.studentName?.charAt(0)}
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:700, fontSize:'1rem', color:'#1e293b' }}>{selected.studentName}</div>
+              <div style={{ fontSize:'0.78rem', color:'#64748b', marginTop:2 }}>
+                Roll No: {selected.rollNo} &nbsp;•&nbsp; {selected.class}–{selected.section} &nbsp;•&nbsp; {selected.academicYear}
+              </div>
+            </div>
+            <div style={{ textAlign:'right' }}>
+              <div style={{ fontSize:'1.8rem', fontWeight:900, color: selected.percentage>=75?'#10b981':selected.percentage>=35?'#f59e0b':'#ef4444' }}>
+                {selected.percentage}%
+              </div>
+              <span style={{ padding:'4px 14px', borderRadius:20, fontSize:'0.78rem', fontWeight:700, background: selected.status==='Pass'?'#dcfce7':'#fee2e2', color: selected.status==='Pass'?'#16a34a':'#dc2626' }}>
+                {selected.status}
+              </span>
+            </div>
+          </div>
+
+          {/* Exam Badge */}
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+            <Award size={18} color="#4f46e5" />
+            <span style={{ fontWeight:700, color:'#1e293b' }}>Exam:</span>
+            <span style={{
+              padding:'5px 14px', borderRadius:20, fontSize:'0.82rem', fontWeight:700,
+              background: getExamColor(selected.exam).bg,
+              color: getExamColor(selected.exam).text,
+              border: `1px solid ${getExamColor(selected.exam).border}`
+            }}>
+              {selected.exam}
+            </span>
+          </div>
+
+          {/* Subject-wise Table */}
+          <div style={{ border:'1px solid #e2e8f0', borderRadius:12, overflow:'hidden' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'#4f46e5' }}>
+                  <th style={{ padding:'10px 14px', textAlign:'left', color:'white', fontWeight:700, fontSize:'0.8rem' }}>Subject</th>
+                  <th style={{ padding:'10px 14px', textAlign:'center', color:'white', fontWeight:700, fontSize:'0.8rem' }}>Marks</th>
+                  <th style={{ padding:'10px 14px', textAlign:'center', color:'white', fontWeight:700, fontSize:'0.8rem' }}>Total</th>
+                  <th style={{ padding:'10px 14px', textAlign:'center', color:'white', fontWeight:700, fontSize:'0.8rem' }}>%</th>
+                  <th style={{ padding:'10px 14px', textAlign:'center', color:'white', fontWeight:700, fontSize:'0.8rem' }}>Result</th>
+                  <th style={{ padding:'10px 14px', textAlign:'center', color:'white', fontWeight:700, fontSize:'0.8rem' }}>Edit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selected.subjects.map((s, i) => {
+                  const pctColor = s.percentage >= 75 ? '#10b981' : s.percentage >= 35 ? '#f59e0b' : '#ef4444';
+                  return (
+                    <tr key={getId(s) || `subject-${i}`} style={{ background: i%2===0?'#fff':'#f8fafc', borderBottom:'1px solid #f1f5f9' }}>
+                      <td style={{ padding:'12px 14px', fontWeight:600, color:'#1e293b' }}>{s.subject}</td>
+                      <td style={{ padding:'12px 14px', textAlign:'center', fontWeight:800, color:'#4f46e5', fontSize:'1rem' }}>{s.marksObtained}</td>
+                      <td style={{ padding:'12px 14px', textAlign:'center', color:'#64748b' }}>{s.totalMarks}</td>
+                      <td style={{ padding:'12px 14px', textAlign:'center' }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+                          <div style={{ width:40, height:5, background:'#e2e8f0', borderRadius:3, overflow:'hidden' }}>
+                            <div style={{ height:'100%', width:`${Math.min(100,s.percentage)}%`, background:pctColor, borderRadius:3 }} />
+                          </div>
+                          <span style={{ fontWeight:700, color:pctColor, fontSize:'0.82rem' }}>{s.percentage}%</span>
+                        </div>
+                      </td>
+                      <td style={{ padding:'12px 14px', textAlign:'center' }}>
+                        <span style={{ padding:'3px 10px', borderRadius:20, fontSize:'0.72rem', fontWeight:700, background: s.status==='Pass'?'#dcfce7':'#fee2e2', color: s.status==='Pass'?'#16a34a':'#dc2626' }}>
+                          {s.status}
+                        </span>
+                      </td>
+                      <td style={{ padding:'12px 14px', textAlign:'center' }}>
+                        <button 
+                          className="btn btn-outline" 
+                          style={{ padding:'4px 8px', fontSize:'0.72rem' }}
+                          onClick={() => openEditSubject(s)}
+                        >
+                          <Edit2 size={11} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ background:'#f1f5f9' }}>
+                  <td style={{ padding:'12px 14px', fontWeight:800, color:'#1e293b' }}>GRAND TOTAL</td>
+                  <td style={{ padding:'12px 14px', textAlign:'center', fontWeight:900, color:'#4f46e5', fontSize:'1.1rem' }}>{selected.totalObtained}</td>
+                  <td style={{ padding:'12px 14px', textAlign:'center', color:'#64748b', fontWeight:600 }}>{selected.totalMax}</td>
+                  <td style={{ padding:'12px 14px', textAlign:'center', fontWeight:900, fontSize:'1rem', color: selected.percentage>=75?'#10b981':selected.percentage>=35?'#f59e0b':'#ef4444' }}>
+                    {selected.percentage}%
+                  </td>
+                  <td style={{ padding:'12px 14px', textAlign:'center' }}>
+                    <span style={{ padding:'4px 14px', borderRadius:20, fontSize:'0.78rem', fontWeight:700, background: selected.status==='Pass'?'#dcfce7':'#fee2e2', color: selected.status==='Pass'?'#16a34a':'#dc2626' }}>
+                      {selected.status}
+                    </span>
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Performance Summary */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginTop:16 }}>
+            {[
+              { label: 'Subjects Passed', value: selected.subjects.filter(s => s.status === 'Pass').length, color: '#10b981' },
+              { label: 'Subjects Failed', value: selected.subjects.filter(s => s.status === 'Fail').length, color: '#ef4444' },
+              { label: 'Highest Score', value: Math.max(...selected.subjects.map(s => s.percentage)) + '%', color: '#4f46e5' },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ background:'#f8fafc', borderRadius:10, padding:'12px 14px', textAlign:'center' }}>
+                <div style={{ fontSize:'1.3rem', fontWeight:800, color }}>{value}</div>
+                <div style={{ fontSize:'0.7rem', color:'#64748b', marginTop:2 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop:18, paddingTop:14, borderTop:'1px solid #f1f5f9', display:'flex', justifyContent:'flex-end', gap:10 }}>
+            <button className="btn btn-outline" onClick={() => {
+              setExportingSel(true);
+              const html = buildReportPDF({ groupedReports: [selected], title: `${selected.studentName} - ${selected.exam}`, user, cls, section, exam: selected.exam });
+              const win = window.open('', '_blank');
+              win.document.write(html); win.document.close();
+              setTimeout(() => { win.print(); setExportingSel(false); }, 600);
+            }} style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <FileDown size={13} /> Print Report
+            </button>
+            <button className="btn btn-primary" onClick={() => setSelected(null)}>Close</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Add / Edit Subject Modal ──────────────────────── */}
       <Modal open={showAdd} onClose={() => { setShowAdd(false); setEditReport(null); setError(''); }}
-        title={editReport ? `Edit Report — ${editReport.studentName}` : 'Add Student Report'} size="md">
+        title={editReport ? `Edit Report — ${editReport.subject}` : 'Add Subject Report'} size="md">
         <F label="Student" req>
           <select className="select" style={{ width:'100%' }} value={form.studentId}
             onChange={e => setForm(p => ({ ...p, studentId: e.target.value }))} disabled={!!editReport}>
@@ -498,8 +714,8 @@ export default function BranchAdminReports() {
           <F label="Subject" req>
             <input className="input" value={form.subject} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} placeholder="e.g. Mathematics" />
           </F>
-          <F label="Exam Type">
-            <select className="select" style={{ width:'100%' }} value={form.exam} onChange={e => setForm(p => ({ ...p, exam: e.target.value }))}>
+          <F label="Exam Type" req>
+            <select className="select" style={{ width:'100%' }} value={form.exam} onChange={e => setForm(p => ({ ...p, exam: e.target.value }))} disabled={!!editReport}>
               {EXAMS.map(e => <option key={e} value={e}>{e}</option>)}
             </select>
           </F>
@@ -608,74 +824,34 @@ export default function BranchAdminReports() {
         </div>
       </Modal>
 
-      {/* ── View Modal ────────────────────────────────────── */}
-      {selected && (
-        <Modal open onClose={() => setSelected(null)} title={`Report — ${selected.studentName}`} size="sm">
-          <div style={{ display:'flex', alignItems:'center', gap:12, background:'linear-gradient(135deg,#eff6ff,#e0f2fe)', borderRadius:10, padding:'12px 14px', marginBottom:14 }}>
-            <div style={{ width:40, height:40, borderRadius:'50%', background:'linear-gradient(135deg,#4f46e5,#7c3aed)', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:800, fontSize:'1.1rem', flexShrink:0 }}>
-              {selected.studentName?.charAt(0)}
-            </div>
-            <div>
-              <div style={{ fontWeight:700, fontSize:'0.9rem' }}>{selected.studentName}</div>
-              <div style={{ fontSize:'0.72rem', color:'#64748b' }}>{selected.rollNo} • {selected.class}–{selected.section}</div>
-            </div>
-            <span style={{ marginLeft:'auto', padding:'4px 12px', borderRadius:20, fontSize:'0.73rem', fontWeight:700, background: selected.status==='Pass'?'#dcfce7':'#fee2e2', color: selected.status==='Pass'?'#16a34a':'#dc2626' }}>
-              {selected.status}
-            </span>
-          </div>
-
-          <div style={{ background:'#f8fafc', borderRadius:10, padding:'14px 16px', marginBottom:14, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <div>
-              <div style={{ fontSize:'0.72rem', color:'#94a3b8', fontWeight:600, textTransform:'uppercase' }}>Score</div>
-              <div style={{ fontWeight:800, fontSize:'1.4rem', color:'#1e293b' }}>
-                {selected.marksObtained} <span style={{ fontSize:'0.9rem', color:'#64748b', fontWeight:400 }}>/ {selected.totalMarks}</span>
-              </div>
-            </div>
-            <div style={{ fontWeight:800, fontSize:'2rem', color: selected.percentage>=75?'#10b981':selected.percentage>=35?'#f59e0b':'#ef4444' }}>
-              {selected.percentage}%
-            </div>
-          </div>
-
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:2 }}>
-            {[['Subject',selected.subject],['Exam',selected.exam],['Year',selected.academicYear],['Class',`${selected.class}–${selected.section}`]].map(([l,v]) => (
-              <div key={l} style={{ padding:'8px 0', borderBottom:'1px solid #f8fafc' }}>
-                <div style={{ fontSize:'0.68rem', color:'#94a3b8', fontWeight:700, textTransform:'uppercase' }}>{l}</div>
-                <div style={{ fontWeight:600, fontSize:'0.84rem', marginTop:2 }}>{v||'—'}</div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ marginTop:16, paddingTop:12, borderTop:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between' }}>
-            <button className="btn btn-outline" style={{ fontSize:'0.78rem', display:'flex', alignItems:'center', gap:5 }} onClick={() => { setSelected(null); openEdit(selected); }}>
-              <Edit2 size={12} /> Edit
-            </button>
-            <button className="btn btn-outline" onClick={() => setSelected(null)}>Close</button>
-          </div>
-        </Modal>
-      )}
-
-      {/* ── Single Delete Confirm ─────────────────────────── */}
-      <Modal open={!!deleteId} onClose={() => setDeleteId(null)} title="Delete Report?" size="sm">
+      {/* ── Delete Group Confirm ──────────────────────────── */}
+      <Modal open={!!deleteGroup} onClose={() => setDeleteGroup(null)} title="Delete All Subject Reports?" size="sm">
         <div style={{ textAlign:'center', padding:'8px 0 16px' }}>
           <div style={{ width:44, height:44, borderRadius:'50%', background:'#fee2e2', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 12px' }}>
             <Trash2 size={20} color="#ef4444" />
           </div>
-          <p style={{ color:'#64748b', fontSize:'0.875rem' }}>This will permanently delete the report. This cannot be undone.</p>
+          {deleteGroup && (
+            <div style={{ marginBottom:12 }}>
+              <p style={{ fontWeight:700, color:'#1e293b', marginBottom:4 }}>{deleteGroup.studentName}</p>
+              <p style={{ color:'#64748b', fontSize:'0.82rem' }}>{deleteGroup.exam} — {deleteGroup.subjectCount} subject(s)</p>
+            </div>
+          )}
+          <p style={{ color:'#64748b', fontSize:'0.875rem' }}>This will permanently delete all subject reports for this exam. This cannot be undone.</p>
         </div>
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
-          <button className="btn btn-outline" onClick={() => setDeleteId(null)}>Cancel</button>
-          <button className="btn btn-danger" onClick={deleteReport}>Delete</button>
+          <button className="btn btn-outline" onClick={() => setDeleteGroup(null)}>Cancel</button>
+          <button className="btn btn-danger" onClick={deleteGroupReports}>Delete All</button>
         </div>
       </Modal>
 
       {/* ── Multi Delete Confirm ──────────────────────────── */}
-      <Modal open={showMultiDel} onClose={() => setShowMultiDel(false)} title="Delete Selected Reports?" size="sm">
+      <Modal open={showMultiDel} onClose={() => setShowMultiDel(false)} title="Delete Selected Results?" size="sm">
         <div style={{ textAlign:'center', padding:'8px 0 16px' }}>
           <div style={{ width:44, height:44, borderRadius:'50%', background:'#fee2e2', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 12px' }}>
             <Trash2 size={20} color="#ef4444" />
           </div>
           <p style={{ color:'#64748b', fontSize:'0.875rem' }}>
-            You are about to delete <strong style={{ color:'#1e293b' }}>{checkedIds.length} report(s)</strong>. This cannot be undone.
+            You are about to delete <strong style={{ color:'#1e293b' }}>{checkedKeys.length} result(s)</strong> and all their subject reports. This cannot be undone.
           </p>
         </div>
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
@@ -684,7 +860,7 @@ export default function BranchAdminReports() {
             style={{ display:'flex', alignItems:'center', gap:6 }}>
             {multiDeleting
               ? <><div style={{ width:13, height:13, border:'2px solid rgba(255,255,255,0.3)', borderTopColor:'white', borderRadius:'50%', animation:'spin 0.7s linear infinite', display:'inline-block' }} /> Deleting...</>
-              : `Delete ${checkedIds.length} Reports`}
+              : `Delete ${checkedKeys.length} Results`}
           </button>
         </div>
       </Modal>

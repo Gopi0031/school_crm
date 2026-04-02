@@ -8,7 +8,7 @@ import {
   CreditCard, BarChart2, CalendarDays, LogIn, Building2,
   Bell, UserCircle, ClipboardList, BookOpen, PenSquare,
   Star, LogOut, Menu, X, ChevronRight, Sparkles,
-  Calendar,Settings ,IndianRupee    // ✅ ADD — no duplicate BookOpen
+  Calendar,Settings ,IndianRupee   
 } from 'lucide-react';
 
 
@@ -33,8 +33,8 @@ const NAV = {
     { label: 'Student Details', href: '/branch-admin/students',         icon: Users },
     { label: 'Teacher Details', href: '/branch-admin/teachers',         icon: GraduationCap },
     { label: 'Attendance',      href: '/branch-admin/attendance',       icon: ClipboardList },
-    { label: 'Fee Structure',   href: '/branch-admin/fee-structure',    icon: IndianRupee },  // ✅ UPDATED - matches your page path
-    { label: 'Fee Collection',  href: '/branch-admin/fee',              icon: CreditCard },   // ✅ Keep original fee route for collection
+    { label: 'Fee Structure',   href: '/branch-admin/fee-structure',    icon: IndianRupee }, 
+    { label: 'Fee Collection',  href: '/branch-admin/fee',              icon: CreditCard },   
     { label: 'Reports',         href: '/branch-admin/reports',          icon: BarChart2 },
     { label: 'Events Calendar', href: '/branch-admin/events',           icon: CalendarDays },
     { label: 'Admission',       href: '/branch-admin/admission',        icon: LogIn },

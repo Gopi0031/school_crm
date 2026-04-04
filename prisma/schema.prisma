@@ -6,7 +6,6 @@ datasource db {
   provider = "mongodb"
   url      = env("DATABASE_URL")
 }
-
 // ─── USER ───────────────────────────────────────────────
 model User {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
@@ -19,16 +18,18 @@ model User {
   branch        String?  @default("")
   branchId      String?  @default("")
   teacherId     String?  @db.ObjectId
-  studentId     String?  @db.ObjectId   // ✅ added
+  studentId     String?  @db.ObjectId
   employeeId    String?
   class         String?
   section       String?
   rollNo        String?
-  assignedClass String?  @default("")   // ✅ added
+  assignedClass String?  @default("")
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
+  
+  // Optional: Add relation (for convenience, though not enforced)
+  // student       Student? @relation(fields: [studentId], references: [id])
 }
-
 // ─── BRANCH ─────────────────────────────────────────────
 model Branch {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
@@ -71,7 +72,7 @@ model Student {
   branch               String   @default("")
   branchId             String   @default("")
   username             String   @default("")
-  userId               String   @default("")
+  userId               String   @db.ObjectId  // Keep as ObjectId
   status               String   @default("Active")
   presentDays          Int      @default(0)
   absentDays           Int      @default(0)
@@ -84,7 +85,6 @@ model Student {
 
   @@unique([rollNo, branch])
 }
-
 // ─── TEACHER ─────────────────────────────────────────────
 model Teacher {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId

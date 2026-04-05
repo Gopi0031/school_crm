@@ -43,8 +43,7 @@ model Branch {
   updatedAt DateTime @updatedAt
 }
 
-// ─── STUDENT ─────────────────────────────────────────────
-model Student {
+  model Student {
   id                   String   @id @default(auto()) @map("_id") @db.ObjectId
   name                 String
   rollNo               String
@@ -72,7 +71,7 @@ model Student {
   branch               String   @default("")
   branchId             String   @default("")
   username             String   @default("")
-  userId               String   @db.ObjectId  // Keep as ObjectId
+  userId               String?  @db.ObjectId  // ✅ Add ? to make it optional
   status               String   @default("Active")
   presentDays          Int      @default(0)
   absentDays           Int      @default(0)

@@ -135,9 +135,8 @@ export async function POST(req) {
     // ═══════════════════════════════════════════════════════
     // CALCULATE FEES (with proper rounding)
     // ═══════════════════════════════════════════════════════
-    const totalFeeNum = Math.round(Number(totalFee) || 0);  // ✅ Round to integer
+    const totalFeeNum = Math.round(Number(totalFee) || 0);
     
-    // Calculate term dues with proper integer math
     let term1Due = 0;
     let term2Due = 0;
     let term3Due = 0;
@@ -146,12 +145,10 @@ export async function POST(req) {
       const base = Math.floor(totalFeeNum / 3);
       const remainder = totalFeeNum - (base * 3);
       
-      // Distribute remainder to term1
       term1Due = base + remainder;
       term2Due = base;
       term3Due = base;
       
-      // Verify sum equals total
       console.log('📊 Fee split:', { 
         total: totalFeeNum, 
         term1Due, term2Due, term3Due, 
@@ -160,7 +157,7 @@ export async function POST(req) {
     }
 
     // ═══════════════════════════════════════════════════════
-    // CREATE STUDENT
+    // CREATE STUDENT (without userId initially)
     // ═══════════════════════════════════════════════════════
     const student = await prisma.student.create({
       data: {
@@ -181,17 +178,17 @@ export async function POST(req) {
         academicYear:  academicYear  || '2025-26',
         yearOfJoining: yearOfJoining || '',
         dateOfJoining: dateOfJoining || new Date().toISOString().split('T')[0],
-        totalFee:      totalFeeNum,        // ✅ Rounded integer
+        totalFee:      totalFeeNum,
         username:      finalUsername,
-        userId:        '',
+        // ✅ Don't set userId here - will update after user creation
         status:        'Active',
         paidFee:       0,
         term1:         0, 
         term2:         0, 
         term3:         0,
-        term1Due,                          // ✅ Proper integer
-        term2Due,                          // ✅ Proper integer
-        term3Due,                          // ✅ Proper integer
+        term1Due,
+        term2Due,
+        term3Due,
         presentDays:      0,
         absentDays:       0,
         totalWorkingDays: 0,
@@ -204,8 +201,6 @@ export async function POST(req) {
     // ═══════════════════════════════════════════════════════
     // CREATE USER (if credentials provided)
     // ═══════════════════════════════════════════════════════
-    let userId = null;
-
     if (finalUsername && password) {
       const hashed = await bcrypt.hash(password, 10);
       
@@ -227,10 +222,9 @@ export async function POST(req) {
         },
       });
       
-      userId = userRecord.id;
       console.log('✅ User created:', userRecord.id, 'studentId:', userRecord.studentId);
 
-      // Update student with userId
+      // ✅ Update student with userId
       await prisma.student.update({
         where: { id: student.id },
         data: { userId: userRecord.id }
@@ -239,7 +233,7 @@ export async function POST(req) {
       console.log('✅ Student updated with userId:', userRecord.id);
     }
 
-    // Fetch updated student
+    // Fetch final student record
     const updatedStudent = await prisma.student.findUnique({
       where: { id: student.id }
     });
@@ -248,7 +242,6 @@ export async function POST(req) {
       success: true, 
       data: {
         ...updatedStudent,
-        // ✅ Ensure response has proper integers
         totalFee:  Math.round(Number(updatedStudent.totalFee)  || 0),
         paidFee:   Math.round(Number(updatedStudent.paidFee)   || 0),
         term1Due:  Math.round(Number(updatedStudent.term1Due)  || 0),

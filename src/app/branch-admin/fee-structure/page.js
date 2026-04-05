@@ -76,23 +76,23 @@ export default function FeeStructurePage() {
     setTimeout(() => setToast(''), 3500);
   };
 
-  // Calculate total from components
+  // Calculate total from components - FIX: Use parseInt for whole numbers
   const calculateTotal = (f) => {
     return (
-      Number(f.tuitionFee || 0) +
-      Number(f.admissionFee || 0) +
-      Number(f.examFee || 0) +
-      Number(f.labFee || 0) +
-      Number(f.libraryFee || 0) +
-      Number(f.sportsFee || 0) +
-      Number(f.transportFee || 0) +
-      Number(f.otherFee || 0)
+      parseInt(f.tuitionFee || 0, 10) +
+      parseInt(f.admissionFee || 0, 10) +
+      parseInt(f.examFee || 0, 10) +
+      parseInt(f.labFee || 0, 10) +
+      parseInt(f.libraryFee || 0, 10) +
+      parseInt(f.sportsFee || 0, 10) +
+      parseInt(f.transportFee || 0, 10) +
+      parseInt(f.otherFee || 0, 10)
     );
   };
 
-  // Auto-split total into 3 terms
+  // Auto-split total into 3 terms - FIX: Ensure integer division
   const autoSplitTerms = (total) => {
-    const t = Number(total) || 0;
+    const t = parseInt(total, 10) || 0;
     if (t === 0) return { term1Fee: 0, term2Fee: 0, term3Fee: 0 };
     const base = Math.floor(t / 3);
     const extra = t - base * 3;
@@ -103,7 +103,7 @@ export default function FeeStructurePage() {
     };
   };
 
-  // Save fee structure
+  // Save fee structure - UPDATED with parseInt
   const saveFee = async () => {
     setError('');
     
@@ -124,11 +124,21 @@ export default function FeeStructurePage() {
     }
 
     const payload = {
-      ...form,
-      totalFee,
-      term1Fee: Number(term1Fee) || 0,
-      term2Fee: Number(term2Fee) || 0,
-      term3Fee: Number(term3Fee) || 0,
+      class: form.class,
+      description: form.description,
+      // ✅ Ensure all values are integers
+      totalFee: parseInt(totalFee, 10),
+      term1Fee: parseInt(term1Fee, 10) || 0,
+      term2Fee: parseInt(term2Fee, 10) || 0,
+      term3Fee: parseInt(term3Fee, 10) || 0,
+      tuitionFee: parseInt(form.tuitionFee, 10) || 0,
+      admissionFee: parseInt(form.admissionFee, 10) || 0,
+      examFee: parseInt(form.examFee, 10) || 0,
+      labFee: parseInt(form.labFee, 10) || 0,
+      libraryFee: parseInt(form.libraryFee, 10) || 0,
+      sportsFee: parseInt(form.sportsFee, 10) || 0,
+      transportFee: parseInt(form.transportFee, 10) || 0,
+      otherFee: parseInt(form.otherFee, 10) || 0,
       academicYear: selectedYear,
       branch: user?.branch,
       branchId: user?.branchId || '',
@@ -455,7 +465,7 @@ export default function FeeStructurePage() {
 
           <div /> {/* Spacer */}
 
-          {/* Fee Components */}
+          {/* Fee Components - UPDATED with parseInt */}
           {[
             ['Tuition Fee', 'tuitionFee'],
             ['Admission Fee', 'admissionFee'],
@@ -471,15 +481,16 @@ export default function FeeStructurePage() {
                 className="input"
                 type="number"
                 min="0"
+                step="1"
                 value={form[key]}
-                onChange={(e) => setForm({ ...form, [key]: parseFloat(e.target.value) || 0 })}
+                onChange={(e) => setForm({ ...form, [key]: parseInt(e.target.value, 10) || 0 })}
                 placeholder="0"
               />
             </FormField>
           ))}
         </div>
 
-        {/* Term-wise breakdown */}
+        {/* Term-wise breakdown - UPDATED with parseInt */}
         <div style={{ marginTop: 16 }}>
           <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#64748b', marginBottom: 8, textTransform: 'uppercase' }}>
             Term-wise Fee Split (Optional - auto-calculated if left empty)
@@ -495,8 +506,9 @@ export default function FeeStructurePage() {
                   className="input"
                   type="number"
                   min="0"
+                  step="1"
                   value={form[key]}
-                  onChange={(e) => setForm({ ...form, [key]: parseFloat(e.target.value) || 0 })}
+                  onChange={(e) => setForm({ ...form, [key]: parseInt(e.target.value, 10) || 0 })}
                   placeholder="Auto"
                 />
               </FormField>
@@ -603,8 +615,9 @@ export default function FeeStructurePage() {
               type="number"
               min="0"
               max="100"
+              step="1"
               value={copyForm.percentageIncrease}
-              onChange={(e) => setCopyForm({ ...copyForm, percentageIncrease: parseFloat(e.target.value) || 0 })}
+              onChange={(e) => setCopyForm({ ...copyForm, percentageIncrease: parseInt(e.target.value, 10) || 0 })}
               placeholder="e.g., 5 for 5% increase"
             />
             <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: 4 }}>

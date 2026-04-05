@@ -1,4 +1,3 @@
-// src/app/api/students/[id]/route.js
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
@@ -6,11 +5,11 @@ import bcrypt from 'bcryptjs';
 // ═══════════════════════════════════════════════════════════════════════════
 // GET - Fetch single student by ID
 // ═══════════════════════════════════════════════════════════════════════════
-export async function GET(req, { params }) {
+export async function GET(req, context) {
   try {
-    const { id } = await params;  // ✅ MUST await params in Next.js 14+
+    const { id } = await context.params;
 
-    console.log('📋 GET /api/students/ id:', id);
+    console.log('📋 GET /api/students/[id]', { id });
 
     if (!id) {
       return NextResponse.json({ 
@@ -20,7 +19,6 @@ export async function GET(req, { params }) {
       }, { status: 400 });
     }
 
-    // Validate ObjectId format for MongoDB
     const isValidObjectId = /^[a-fA-F0-9]{24}$/.test(id);
     
     if (!isValidObjectId) {
@@ -43,19 +41,16 @@ export async function GET(req, { params }) {
       }, { status: 404 });
     }
 
-    // ✅ Compute and normalize fee values
     const totalFee = Math.round(Number(student.totalFee) || 0);
     const term1    = Math.round(Number(student.term1)    || 0);
     const term2    = Math.round(Number(student.term2)    || 0);
     const term3    = Math.round(Number(student.term3)    || 0);
     const paidFee  = term1 + term2 + term3;
 
-    // Compute term dues
     let term1Due = Math.round(Number(student.term1Due) || 0);
     let term2Due = Math.round(Number(student.term2Due) || 0);
     let term3Due = Math.round(Number(student.term3Due) || 0);
 
-    // Recalculate if dues are all zero but there's a fee
     if (totalFee > 0 && term1Due === 0 && term2Due === 0 && term3Due === 0) {
       const base = Math.floor(totalFee / 3);
       const remainder = totalFee - (base * 3);
@@ -91,12 +86,12 @@ export async function GET(req, { params }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // PUT - Full update student
 // ═══════════════════════════════════════════════════════════════════════════
-export async function PUT(req, { params }) {
+export async function PUT(req, context) {
   try {
-    const { id } = await params;  // ✅ MUST await params in Next.js 14+
+    const { id } = await context.params;
     const body = await req.json();
 
-    console.log('📝 PUT /api/students/' + id, Object.keys(body));
+    console.log('📝 PUT /api/students/[id]', { id, fields: Object.keys(body) });
 
     if (!id) {
       return NextResponse.json({ 
@@ -105,7 +100,6 @@ export async function PUT(req, { params }) {
       }, { status: 400 });
     }
 
-    // Validate ObjectId format
     const isValidObjectId = /^[a-fA-F0-9]{24}$/.test(id);
     if (!isValidObjectId) {
       return NextResponse.json({ 
@@ -123,22 +117,17 @@ export async function PUT(req, { params }) {
       }, { status: 404 });
     }
 
-    // Extract password fields (don't save directly to student)
     const { password, confirmPassword, ...updateFields } = body;
-
-    // ✅ Process fee fields with proper rounding
     const processedData = { ...updateFields };
 
     if (updateFields.totalFee !== undefined) {
       processedData.totalFee = Math.round(Number(updateFields.totalFee) || 0);
       
-      // Recalculate term dues if totalFee changes
       if (processedData.totalFee > 0) {
         const total = processedData.totalFee;
         const base = Math.floor(total / 3);
         const remainder = total - (base * 3);
         
-        // Only update dues if not explicitly provided
         if (updateFields.term1Due === undefined) {
           processedData.term1Due = base + remainder;
         }
@@ -151,7 +140,6 @@ export async function PUT(req, { params }) {
       }
     }
 
-    // Round any fee fields that were provided
     const feeFields = ['paidFee', 'term1', 'term2', 'term3', 'term1Due', 'term2Due', 'term3Due'];
     feeFields.forEach(field => {
       if (processedData[field] !== undefined) {
@@ -159,7 +147,6 @@ export async function PUT(req, { params }) {
       }
     });
 
-    // Integer fields
     const intFields = ['presentDays', 'absentDays', 'totalWorkingDays'];
     intFields.forEach(field => {
       if (processedData[field] !== undefined) {
@@ -167,7 +154,6 @@ export async function PUT(req, { params }) {
       }
     });
 
-    // Update student
     const updated = await prisma.student.update({
       where: { id },
       data: processedData,
@@ -175,9 +161,6 @@ export async function PUT(req, { params }) {
 
     console.log('✅ Student updated:', updated.name);
 
-    // ═══════════════════════════════════════════════════════
-    // Handle password update if provided
-    // ═══════════════════════════════════════════════════════
     if (password && password.trim().length >= 6) {
       const userId = existing.userId;
       
@@ -192,14 +175,9 @@ export async function PUT(req, { params }) {
         } catch (pwdErr) {
           console.warn('⚠️ Password update failed:', pwdErr.message);
         }
-      } else {
-        console.warn('⚠️ No valid userId for password update');
       }
     }
 
-    // ═══════════════════════════════════════════════════════
-    // Sync user record if exists
-    // ═══════════════════════════════════════════════════════
     if (existing.userId && /^[a-fA-F0-9]{24}$/.test(existing.userId)) {
       try {
         await prisma.user.update({
@@ -239,14 +217,14 @@ export async function PUT(req, { params }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PATCH - Partial update student (used for fee updates)
+// PATCH - Partial update student
 // ═══════════════════════════════════════════════════════════════════════════
-export async function PATCH(req, { params }) {
+export async function PATCH(req, context) {
   try {
-    const { id } = await params;  // ✅ MUST await params in Next.js 14+
+    const { id } = await context.params;
     const body = await req.json();
 
-    console.log('📝 PATCH /api/students/' + id, Object.keys(body));
+    console.log('📝 PATCH /api/students/[id]', { id, fields: Object.keys(body) });
 
     if (!id) {
       return NextResponse.json({ 
@@ -256,7 +234,6 @@ export async function PATCH(req, { params }) {
       }, { status: 400 });
     }
 
-    // Validate ObjectId format
     const isValidObjectId = /^[a-fA-F0-9]{24}$/.test(id);
     if (!isValidObjectId) {
       return NextResponse.json({ 
@@ -278,10 +255,8 @@ export async function PATCH(req, { params }) {
       }, { status: 404 });
     }
 
-    // Build update data with proper rounding
     const updateData = {};
     
-    // ✅ Fee fields - ensure proper integer rounding
     const feeFields = ['totalFee', 'paidFee', 'term1', 'term2', 'term3', 'term1Due', 'term2Due', 'term3Due'];
     feeFields.forEach(field => {
       if (body[field] !== undefined) {
@@ -289,7 +264,6 @@ export async function PATCH(req, { params }) {
       }
     });
 
-    // String fields
     const stringFields = [
       'name', 'rollNo', 'class', 'section', 'gender', 'bloodGroup', 
       'caste', 'aadhaar', 'address', 'parentName', 'phone', 'email',
@@ -303,15 +277,12 @@ export async function PATCH(req, { params }) {
       }
     });
 
-    // Integer fields
     const intFields = ['presentDays', 'absentDays', 'totalWorkingDays'];
     intFields.forEach(field => {
       if (body[field] !== undefined) {
         updateData[field] = Math.round(Number(body[field]) || 0);
       }
     });
-
-    console.log('📝 Update data:', updateData);
 
     const updated = await prisma.student.update({
       where: { id },
@@ -324,7 +295,6 @@ export async function PATCH(req, { params }) {
       success: true, 
       data: {
         ...updated,
-        // Ensure response has proper integers
         totalFee:  Math.round(Number(updated.totalFee)  || 0),
         paidFee:   Math.round(Number(updated.paidFee)   || 0),
         term1:     Math.round(Number(updated.term1)     || 0),
@@ -348,74 +318,216 @@ export async function PATCH(req, { params }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // DELETE - Remove student
 // ═══════════════════════════════════════════════════════════════════════════
-export async function DELETE(req, { params }) {
+export async function DELETE(req, context) {
   try {
-    const { id } = await params;  // ✅ MUST await params in Next.js 14+
+    const { id } = await context.params;
 
-    console.log('🗑️ DELETE /api/students/ id:', id);
+    console.log('🗑️ DELETE /api/students/[id]', { id });
 
-    if (!id) {
-      console.log('❌ No ID provided');
-      return NextResponse.json({ success: false, error: 'Student ID is required' }, { status: 400 });
+    // Validate ID
+    if (!id || !/^[a-fA-F0-9]{24}$/.test(id)) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Valid student ID is required' 
+      }, { status: 400 });
     }
 
-    // ✅ Validate ObjectId format
-    const isValidObjectId = /^[a-fA-F0-9]{24}$/.test(id);
-    if (!isValidObjectId) {
-      console.log('❌ Invalid ObjectId:', id);
-      return NextResponse.json({ success: false, error: 'Invalid student ID' }, { status: 400 });
-    }
-
-    // ✅ Find student first
-    const student = await prisma.student.findUnique({ where: { id } });
+    // Find student
+    const student = await prisma.student.findUnique({ 
+      where: { id } 
+    });
 
     if (!student) {
-      console.log('❌ Student not found:', id);
-      return NextResponse.json({ success: false, error: 'Student not found' }, { status: 404 });
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Student not found' 
+      }, { status: 404 });
     }
 
-    console.log('📋 Deleting student:', student.name, student.rollNo);
+    console.log('📋 Student to delete:', {
+      id: student.id,
+      name: student.name,
+      rollNo: student.rollNo,
+      username: student.username,
+      userId: student.userId
+    });
 
-    // ✅ Deactivate linked user (only if userId is a valid ObjectId)
+    let deletedUserIds = [];
+
+    // ═══════════════════════════════════════════════════════
+    // STRATEGY 1: Delete by userId (primary)
+    // ═══════════════════════════════════════════════════════
     if (student.userId && /^[a-fA-F0-9]{24}$/.test(student.userId)) {
       try {
-        await prisma.user.update({
-          where: { id: student.userId },
-          data: { isActive: false },
-        });
-        console.log('✅ User deactivated:', student.userId);
-      } catch (userErr) {
-        // Don't let user deactivation failure prevent student deletion
-        console.warn('⚠️ User deactivation failed (continuing with delete):', userErr.message);
+        await prisma.user.delete({ where: { id: student.userId } });
+        deletedUserIds.push(student.userId);
+        console.log('✅ Deleted user by userId:', student.userId);
+      } catch (err) {
+        console.warn('⚠️ Delete by userId failed:', err.code, err.message);
       }
-    } else {
-      console.log('ℹ️ No valid userId to deactivate:', student.userId);
     }
 
-    // ✅ Delete attendance records for this student
+    // ═══════════════════════════════════════════════════════
+    // STRATEGY 2: Delete by username (fallback)
+    // ═══════════════════════════════════════════════════════
+    if (student.username && student.username.trim()) {
+      try {
+        const username = student.username.toLowerCase().trim();
+        const userByUsername = await prisma.user.findUnique({ 
+          where: { username } 
+        });
+        
+        if (userByUsername && !deletedUserIds.includes(userByUsername.id)) {
+          await prisma.user.delete({ where: { id: userByUsername.id } });
+          deletedUserIds.push(userByUsername.id);
+          console.log('✅ Deleted user by username:', username);
+        }
+      } catch (err) {
+        console.warn('⚠️ Delete by username failed:', err.code, err.message);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // STRATEGY 3: Delete by studentId reference (backup)
+    // ═══════════════════════════════════════════════════════
     try {
-      await prisma.attendance.deleteMany({
-        where: { entityId: id, entityType: 'student' },
+      const usersWithStudentId = await prisma.user.findMany({ 
+        where: { 
+          studentId: student.id,
+          role: 'student'
+        } 
       });
-      console.log('✅ Attendance records deleted');
-    } catch (attErr) {
-      console.warn('⚠️ Attendance cleanup failed:', attErr.message);
+      
+      for (const user of usersWithStudentId) {
+        if (!deletedUserIds.includes(user.id)) {
+          await prisma.user.delete({ where: { id: user.id } });
+          deletedUserIds.push(user.id);
+          console.log('✅ Deleted user by studentId reference:', user.id);
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Delete by studentId failed:', err.message);
     }
 
-    // ✅ Actually delete the student
+    // ═══════════════════════════════════════════════════════
+    // STRATEGY 4: Delete by rollNo + branch (final fallback)
+    // ═══════════════════════════════════════════════════════
+    if (student.rollNo && student.branch) {
+      try {
+        const usersWithRollNo = await prisma.user.findMany({ 
+          where: { 
+            rollNo: { equals: student.rollNo, mode: 'insensitive' },
+            branch: student.branch,
+            role: 'student'
+          } 
+        });
+        
+        for (const user of usersWithRollNo) {
+          if (!deletedUserIds.includes(user.id)) {
+            await prisma.user.delete({ where: { id: user.id } });
+            deletedUserIds.push(user.id);
+            console.log('✅ Deleted user by rollNo+branch:', user.id);
+          }
+        }
+      } catch (err) {
+        console.warn('⚠️ Delete by rollNo failed:', err.message);
+      }
+    }
+
+    console.log(`🗑️ Total users deleted: ${deletedUserIds.length}`, deletedUserIds);
+
+    // ═══════════════════════════════════════════════════════
+    // Delete related records (cascade)
+    // ═══════════════════════════════════════════════════════
+    const cleanupResults = {
+      attendance: 0,
+      reports: 0,
+      feePayments: 0,
+      feeNotifications: 0,
+      promotionHistory: 0,
+    };
+
+    try {
+      const deleted = await prisma.attendance.deleteMany({
+        where: { entityId: id, entityType: 'student' }
+      });
+      cleanupResults.attendance = deleted.count;
+    } catch (err) {
+      console.warn('⚠️ Attendance cleanup failed:', err.message);
+    }
+
+    try {
+      const deleted = await prisma.report.deleteMany({
+        where: { studentId: id }
+      });
+      cleanupResults.reports = deleted.count;
+    } catch (err) {
+      console.warn('⚠️ Reports cleanup failed:', err.message);
+    }
+
+    try {
+      const deleted = await prisma.feePayment.deleteMany({
+        where: { studentId: id }
+      });
+      cleanupResults.feePayments = deleted.count;
+    } catch (err) {
+      console.warn('⚠️ Fee payments cleanup failed:', err.message);
+    }
+
+    try {
+      const deleted = await prisma.feeNotification.deleteMany({
+        where: { studentId: id }
+      });
+      cleanupResults.feeNotifications = deleted.count;
+    } catch (err) {
+      console.warn('⚠️ Fee notifications cleanup failed:', err.message);
+    }
+
+    try {
+      const deleted = await prisma.promotionHistory.deleteMany({
+        where: { studentId: id }
+      });
+      cleanupResults.promotionHistory = deleted.count;
+    } catch (err) {
+      console.warn('⚠️ Promotion history cleanup failed:', err.message);
+    }
+
+    console.log('🗑️ Cleanup results:', cleanupResults);
+
+    // ═══════════════════════════════════════════════════════
+    // Finally, delete the student
+    // ═══════════════════════════════════════════════════════
     await prisma.student.delete({ where: { id } });
 
-    console.log('✅ Student deleted successfully:', id);
+    console.log('✅ Student deleted successfully:', student.name);
 
     return NextResponse.json({
       success: true,
-      message: `Student ${student.name} deleted successfully`,
+      message: `Student ${student.name} (${student.rollNo}) and ${deletedUserIds.length} associated user(s) deleted successfully`,
+      deletedRecords: {
+        student: 1,
+        users: deletedUserIds.length,
+        ...cleanupResults
+      }
     });
+
   } catch (err) {
-    console.error('❌ DELETE /api/students/[id] error:', err);
+    console.error('❌ DELETE error:', err);
+    
+    let errorMessage = 'Failed to delete student';
+    
+    if (err.code === 'P2025') {
+      errorMessage = 'Student not found or already deleted';
+    } else if (err.code === 'P2003') {
+      errorMessage = 'Cannot delete: student has protected related records';
+    } else if (err.message) {
+      errorMessage = err.message;
+    }
+
     return NextResponse.json({
       success: false,
-      error: err.message || 'Failed to delete student',
+      error: errorMessage,
+      code: err.code || 'UNKNOWN_ERROR'
     }, { status: 500 });
   }
 }

@@ -422,10 +422,10 @@ export default function SuperAdminEvents() {
               <input type="checkbox" checked={form.isPublished} onChange={e => setForm({...form,isPublished:e.target.checked})} style={{ accentColor:'#10b981', width:18, height:18 }}/>
               <span style={{ fontSize:'0.84rem', fontWeight:500 }}>Publish immediately</span>
             </label>
-            <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+            {/* <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
               <input type="checkbox" checked={form.notifyUsers} onChange={e => setForm({...form,notifyUsers:e.target.checked})} style={{ accentColor:'#6366f1', width:18, height:18 }}/>
               <span style={{ fontSize:'0.84rem', fontWeight:500 }}><Send size={12} style={{ display:'inline', marginRight:4 }}/>Send notification</span>
-            </label>
+            </label> */}
           </div>
         </div>
         <div style={{ display:'flex', gap:10, justifyContent:'flex-end', marginTop:18, paddingTop:14, borderTop:'1px solid #f0f2ff' }}>
